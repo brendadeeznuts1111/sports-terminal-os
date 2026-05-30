@@ -191,4 +191,5 @@ bun run db:seed          # Seed initial data
 
 | Demo | File | What It Shows |
 |------|------|---------------|
-| Mega‑liner v3 | `demos/mega-liner-v3.ts` | All Bun primitives (WebView, cron, markdown.ansi, TOML, Transpiler, password, listen, udpSocket, serve, sqlite) woven into a real‑time odds‑monitoring pipeline. Zero deps, one file. `bun run demos/mega-liner-v3.ts` |
+| Mega‑liner v3 | `demos/mega-liner-v3.ts` | Bun primitives (WebView, cron, markdown.ansi, TOML, Transpiler, password, listen, udpSocket, serve, sqlite). `bun run demos/mega-liner-v3.ts` |
+| Mega‑liner v7 | `demos/mega-liner-v7.ts` | v3 + `await using` disposal, Bun.Image pipeline (placeholder, resize, modulate, jpeg), SHA‑256 hashing, thumbnail cache + HTTP endpoint, placeholder WS push. Production‑ready. `bun run demos/mega-liner-v7.ts` |

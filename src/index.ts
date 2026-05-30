@@ -698,8 +698,8 @@ function startServer(): void {
         return handleRequest(new Request(`${url.origin}/api/health`, req));
       }
 
-      // API routes (includes /api/metrics, /api/health/* via router)
-      if (pathname.startsWith("/api/")) {
+      // API routes + WS metrics (includes /api/metrics, /api/health/*, /ws/metrics via router)
+      if (pathname.startsWith("/api/") || pathname.startsWith("/ws/")) {
         try {
           const response = await handleRequest(req);
           return response;

@@ -169,3 +169,9 @@ bun run db:seed          # Seed initial data
 - `design/api-contract.md` — All 93 endpoints
 - `plan.md` — Original build plan
 - `MEMORY.md` — Session memory + zone status
+
+## Demos
+
+| Demo | File | What It Shows |
+|------|------|---------------|
+| Mega‑liner v3 | `demos/mega-liner-v3.ts` | All Bun primitives (WebView, cron, markdown.ansi, TOML, Transpiler, password, listen, udpSocket, serve, sqlite) woven into a real‑time odds‑monitoring pipeline. Zero deps, one file. `bun run demos/mega-liner-v3.ts` |

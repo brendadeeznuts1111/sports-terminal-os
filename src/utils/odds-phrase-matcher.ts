@@ -79,6 +79,97 @@ export function normalizeTotal(total: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Odds value conversion — fractional / decimal / american
+// ---------------------------------------------------------------------------
+
+export interface NormalizedOdds {
+  decimal: number | null;
+  original: string;
+  format: "decimal" | "fractional" | "american" | "unknown";
+}
+
+/**
+ * Convert any odds format to decimal.
+ * Supports:
+ *   - Decimal: "1.50", "2.00"
+ *   - Fractional: "1/2", "5/2"
+ *   - American: "+150", "-200"
+ */
+export function normalizeOddsValue(value: string): NormalizedOdds {
+  const trimmed = value.trim();
+
+  // Decimal: 1.50, 2.00
+  const decimal = parseFloat(trimmed);
+  if (!isNaN(decimal) && trimmed.includes(".")) {
+    return { decimal, original: trimmed, format: "decimal" };
+  }
+
+  // Fractional: 1/2, 5/2
+  const fracMatch = trimmed.match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (fracMatch) {
+    const num = parseInt(fracMatch[1]);
+    const den = parseInt(fracMatch[2]);
+    return {
+      decimal: den > 0 ? num / den + 1 : null,
+      original: trimmed,
+      format: "fractional",
+    };
+  }
+
+  // American: +150, -200
+  const americanMatch = trimmed.match(/^([+-])(\d+)$/);
+  if (americanMatch) {
+    const sign = americanMatch[1];
+    const amt = parseInt(americanMatch[2]);
+    const dec = sign === "+" ? amt / 100 + 1 : 100 / amt + 1;
+    return { decimal: Math.round(dec * 100) / 100, original: trimmed, format: "american" };
+  }
+
+  return { decimal: null, original: trimmed, format: "unknown" };
+}
+
+// ---------------------------------------------------------------------------
+// Event time normalization — in-play clock parsing
+// ---------------------------------------------------------------------------
+
+export interface NormalizedTime {
+  minutes: number | null;
+  extraTime: number;
+  display: string;
+}
+
+/**
+ * Parse in-play event time strings.
+ * "45'+1" → { minutes: 45, extraTime: 1, display: "45+1" }
+ * "45:00+1" → { minutes: 45, extraTime: 1, display: "45+1" }
+ * "90" → { minutes: 90, extraTime: 0, display: "90" }
+ */
+export function normalizeEventTime(timeStr: string): NormalizedTime {
+  const cleaned = timeStr
+    .replace(/['′\"]/g, "")
+    .replace(/\s+/g, "")
+    .trim();
+
+  // Split on : or + to extract numeric parts. "45:00+1" → ["45","00","1"]
+  const parts = cleaned.split(/[:+]/).map(Number).filter((n) => !isNaN(n));
+
+  if (parts.length === 0) {
+    return { minutes: null, extraTime: 0, display: cleaned };
+  }
+
+  const minutes = parts[0];
+  // If there are 3 parts ("45", "00", "1"), the last is extra time
+  // If there are 2 parts ("45", "1"), the last is extra time
+  const extraTime = parts.length >= 2 ? parts[parts.length - 1] : 0;
+
+  return {
+    minutes,
+    extraTime: extraTime !== minutes ? extraTime : 0,
+    display: extraTime > 0 && extraTime !== minutes ? `${minutes}+${extraTime}` : `${minutes}`,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Canonical phrase mapping
 // ---------------------------------------------------------------------------
 
@@ -91,7 +182,7 @@ const CANONICAL_PHRASES: Record<string, string[]> = {
   "over 3.5": ["over 3.5", "total goals over 3.5", "over 3.5 goals", "o 3.5", "o3.5"],
   "under 3.5": ["under 3.5", "total goals under 3.5", "under 3.5 goals", "u 3.5", "u3.5"],
   "1x2": ["1x2", "1x2 full time", "1x2 (full time)", "full time result", "match result", "3-way"],
-  "moneyline": ["moneyline", "ml", "money line", "to win", "match winner"],
+  "moneyline": ["moneyline", "ml", "money line", "to win", "to win match", "match winner", "outright winner"],
   "both teams to score": ["both teams to score", "btts", "both to score", "gg/ng"],
   "double chance": ["double chance", "dc", "1x", "x2", "12"],
   "correct score": ["correct score", "cs", "exact score"],

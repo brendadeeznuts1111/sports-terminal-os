@@ -29,6 +29,8 @@ export interface StorageBatcherOptions {
   maxBatch?: number;
   /** Auto-flush interval in ms. 0 = manual flush only. Default 5000. */
   flushIntervalMs?: number;
+  /** Max queue depth before rejecting inserts (backpressure). 0 = unlimited. Default 1000. */
+  maxQueue?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -43,19 +45,23 @@ export class StorageBatcher {
   private buffer: unknown[][] = [];
   private stmt: ReturnType<Database["prepare"]> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private maxQueue: number;
 
   /** Total records inserted since creation. */
   private totalInserted = 0;
   /** Total flush operations performed. */
   private flushCount = 0;
+  /** Total records rejected due to queue full (backpressure). */
+  private rejected = 0;
 
   constructor(db: Database, options: StorageBatcherOptions) {
     this.db = db;
     this.table = options.table;
     this.columns = options.columns;
     this.maxBatch = options.maxBatch ?? 100;
+    this.maxQueue = options.maxQueue ?? 1000;
 
-    // Prepare the statement lazily (first flush)
+    // Prepare the statement at construction time
     const placeholders = this.columns.map(() => "?").join(", ");
     const colNames = this.columns.join(", ");
     this.stmt = db.prepare(
@@ -75,12 +81,21 @@ export class StorageBatcher {
 
   /**
    * Queue a row for insertion. Auto-flushes if buffer exceeds maxBatch.
+   * Rejects if queue exceeds maxQueue (backpressure).
+   * Returns true if accepted, false if rejected.
    */
-  insert(values: unknown[]): void {
+  insert(values: unknown[]): boolean {
+    // Backpressure: reject if queue is full
+    if (this.maxQueue > 0 && this.buffer.length >= this.maxQueue) {
+      this.rejected++;
+      return false;
+    }
+
     this.buffer.push(values);
     if (this.buffer.length >= this.maxBatch) {
       this.flushNow();
     }
+    return true;
   }
 
   /**
@@ -157,7 +172,9 @@ export class StorageBatcher {
       buffered: this.buffer.length,
       totalInserted: this.totalInserted,
       flushCount: this.flushCount,
+      rejected: this.rejected,
       maxBatch: this.maxBatch,
+      maxQueue: this.maxQueue > 0 ? this.maxQueue : "unlimited",
     };
   }
 

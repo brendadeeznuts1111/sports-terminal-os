@@ -143,4 +143,27 @@ describe("StorageBatcher", () => {
     // No assertion needed — just verifying stop() doesn't throw
     expect(typeof batcher.stop).toBe("function");
   });
+
+  it("rejects inserts when queue exceeds maxQueue (backpressure)", () => {
+    const batcher = new StorageBatcher(db, {
+      table: "test_feed",
+      columns: ["site", "team_name", "odds_value", "confidence", "timestamp"],
+      maxQueue: 3,
+      flushIntervalMs: 0,
+    });
+
+    // Fill the queue
+    expect(batcher.insert(["a", "b", "c", 1, 1])).toBe(true);
+    expect(batcher.insert(["a", "b", "c", 2, 2])).toBe(true);
+    expect(batcher.insert(["a", "b", "c", 3, 3])).toBe(true);
+
+    // Queue is full — should reject
+    expect(batcher.buffered).toBe(3);
+    expect(batcher.insert(["a", "b", "c", 4, 4])).toBe(false);
+    expect(batcher.buffered).toBe(3); // Still 3, rejected
+
+    const m = batcher.getMetrics();
+    expect(m.rejected).toBe(1);
+    expect(m.maxQueue).toBe(3);
+  });
 });

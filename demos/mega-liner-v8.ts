@@ -133,12 +133,73 @@ insert.run(5, "demo", "Liverpool", "Liverpool", "Liverpool FC", "2.20", 0.99, nu
 console.log("🗄️  SQLite: 5 rows seeded, 2 tables");
 
 // ---------------------------------------------------------------------------
-// 3. Bun.password — admin auth (bcrypt)
+// 3. Auth — Bun.password (bcrypt) + Bun.CryptoHasher (API key) + sessions
 // ---------------------------------------------------------------------------
 
 const ADMIN_PASSWORD = Bun.env.ADMIN_PASSWORD ?? "demo";
 const ADMIN_HASH = await Bun.password.hash(ADMIN_PASSWORD, "bcrypt");
-console.log("🔐 Admin bcrypt hash ready");
+
+// API key — SHA‑256 hashed at startup (raw key never stored in memory)
+const API_KEY_HASH: string | null = Bun.env.ADMIN_API_KEY
+  ? new Bun.CryptoHasher("sha256").update(Bun.env.ADMIN_API_KEY).digest("hex") as string
+  : null;
+
+// Session store — v7 UUID tokens, SHA‑256 hashed, 1hr TTL
+const SESSION_TTL_MS = parseInt(Bun.env.SESSION_TTL_MS ?? "3600000", 10); // 1hr default
+const sessions = new Map<string, { user: string; createdAt: number; expires: number }>();
+
+console.log(
+  `🔐 Auth: bcrypt + ${API_KEY_HASH ? "API key (SHA‑256)" : "password only"} + sessions (${SESSION_TTL_MS / 1000}s TTL)`
+);
+
+/** Verify a password against the bcrypt hash. */
+async function verifyPassword(pass: string): Promise<boolean> {
+  return Bun.password.verify(pass, ADMIN_HASH);
+}
+
+/** Verify an API key against the SHA‑256 hash (constant‑time safe — hash compare). */
+function verifyApiKey(key: string): boolean {
+  if (!API_KEY_HASH) return false;
+  const hashed = new Bun.CryptoHasher("sha256").update(key).digest("hex") as string;
+  return hashed === API_KEY_HASH;
+}
+
+/** Create a session token (v7 UUID, time‑ordered) and return the plain token. */
+function createSession(user: string): string {
+  const token = Bun.randomUUIDv7();
+  const hashed = new Bun.CryptoHasher("sha256").update(token).digest("hex") as string;
+  sessions.set(hashed, {
+    user,
+    createdAt: Date.now(),
+    expires: Date.now() + SESSION_TTL_MS,
+  });
+  return token;
+}
+
+/** Verify a Bearer token against the session store. Returns user or null. */
+function verifySession(token: string): { user: string } | null {
+  const hashed = new Bun.CryptoHasher("sha256").update(token).digest("hex") as string;
+  const session = sessions.get(hashed);
+  if (!session) return null;
+  if (Date.now() > session.expires) {
+    sessions.delete(hashed);
+    return null;
+  }
+  return { user: session.user };
+}
+
+/** Garbage‑collect expired sessions. */
+function gcSessions(): number {
+  const now = Date.now();
+  let removed = 0;
+  for (const [hash, session] of sessions) {
+    if (now > session.expires) {
+      sessions.delete(hash);
+      removed++;
+    }
+  }
+  return removed;
+}
 
 // ---------------------------------------------------------------------------
 // 4. Bun.Transpiler — dynamic alert filter
@@ -350,6 +411,90 @@ async function processSite(
 }
 
 // ---------------------------------------------------------------------------
+// 9.5. Admin auth handlers
+// ---------------------------------------------------------------------------
+
+async function handleAdminLogin(req: Request): Promise<Response> {
+  // Try Bearer token first (already logged in)
+  const authHeader = req.headers.get("Authorization") ?? "";
+  if (authHeader.startsWith("Bearer ")) {
+    const session = verifySession(authHeader.slice(7));
+    if (session) {
+      return Response.json({ status: "ok", user: session.user, method: "token" });
+    }
+    return Response.json({ error: "Invalid or expired token" }, { status: 401 });
+  }
+
+  // Try Basic Auth
+  if (authHeader.startsWith("Basic ")) {
+    try {
+      const [user, pass] = atob(authHeader.slice(6)).split(":");
+      if (await verifyPassword(pass)) {
+        const token = createSession(user || "admin");
+        return Response.json({ status: "ok", user: user || "admin", token, method: "password" });
+      }
+    } catch { /* fall through */ }
+    return Response.json({ error: "Invalid credentials" }, { status: 403 });
+  }
+
+  // Try API key (query param or X-Api-Key header)
+  const keyParam = new URL(req.url).searchParams.get("key");
+  const keyHeader = req.headers.get("X-Api-Key");
+  const apiKey = keyParam ?? keyHeader;
+  if (apiKey && verifyApiKey(apiKey)) {
+    const token = createSession("admin");
+    return Response.json({ status: "ok", user: "admin", token, method: "apikey" });
+  }
+
+  return Response.json(
+    { error: "Authenticate with Basic Auth, X-Api-Key header, or ?key= query param" },
+    { status: 401 }
+  );
+}
+
+function requireAuth(req: Request): { user: string } | null {
+  const authHeader = req.headers.get("Authorization") ?? "";
+  if (authHeader.startsWith("Bearer ")) {
+    return verifySession(authHeader.slice(7));
+  }
+  // Also allow API key for non-login admin routes
+  const keyHeader = req.headers.get("X-Api-Key");
+  const keyParam = new URL(req.url).searchParams.get("key");
+  const apiKey = keyParam ?? keyHeader;
+  if (apiKey && verifyApiKey(apiKey)) {
+    return { user: "admin" };
+  }
+  return null;
+}
+
+function handleAdminSessions(req: Request): Response {
+  const auth = requireAuth(req);
+  if (!auth) return Response.json({ error: "Authentication required" }, { status: 401 });
+
+  const list = [...sessions.entries()].map(([hash, s]) => ({
+    hashPrefix: (hash as string).slice(0, 12),
+    user: s.user,
+    createdAt: new Date(s.createdAt).toISOString(),
+    expires: new Date(s.expires).toISOString(),
+    active: Date.now() <= s.expires,
+  }));
+
+  return Response.json({ sessions: list, total: list.length });
+}
+
+function handleAdminLogout(req: Request): Response {
+  const authHeader = req.headers.get("Authorization") ?? "";
+  if (authHeader.startsWith("Bearer ")) {
+    const hashed = new Bun.CryptoHasher("sha256")
+      .update(authHeader.slice(7))
+      .digest("hex") as string;
+    sessions.delete(hashed);
+    return Response.json({ status: "ok", message: "Logged out" });
+  }
+  return Response.json({ error: "Bearer token required" }, { status: 400 });
+}
+
+// ---------------------------------------------------------------------------
 // 10. Bun.serve — versioned WebSocket + thumbnail HTTP
 // ---------------------------------------------------------------------------
 
@@ -381,13 +526,32 @@ const server = Bun.serve({
       });
     }
 
+    // ── Admin routes (auth required) ──
+
+    // POST /admin/login — password, API key, or existing Bearer token
+    if (req.method === "POST" && url.pathname === "/admin/login") {
+      return handleAdminLogin(req);
+    }
+
+    // DELETE /admin/sessions — logout (invalidate current token)
+    if (req.method === "DELETE" && url.pathname === "/admin/sessions") {
+      return handleAdminLogout(req);
+    }
+
+    // GET /admin/sessions — list active sessions (Bearer token required)
+    if (url.pathname === "/admin/sessions") {
+      return handleAdminSessions(req);
+    }
+
     // Health check
     if (url.pathname === "/health") {
       return Response.json({
         status: "ok",
-        protocol: "odds-drift-v2.1.0",
+        protocol: "odds-drift-v3.0.0",
         uptime: process.uptime(),
         thumbnails: thumbCache.size,
+        snapshotsCached: lastSnapshotCache.size,
+        activeSessions: sessions.size,
       });
     }
 
@@ -443,6 +607,10 @@ console.log(`🚀 Mega‑liner v8 (Change‑Aware) on ${server.url}`);
 
 async function scrapeAllSites(): Promise<void> {
   console.log("⏰ Scraping all sites…");
+
+  // Session GC — clean expired tokens on each cron tick
+  const removed = gcSessions();
+  if (removed > 0) console.log(`🗑️  Session GC: removed ${removed} expired`);
 
   const result = await processSite("demo", `file://${ODDS_DEMO_PATH}`);
 

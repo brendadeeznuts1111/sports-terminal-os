@@ -67,6 +67,21 @@ Every feed follows the same 3-function pattern. See `docs/feeds-blueprint.txt` f
 | `team-alias-loader.ts` | `loadAliasMap()`, `getAliasMap()`, `getCanonicalTeams()` | DB-backed alias hydration |
 | `odds-drift-ws.ts` | `broadcastOddsDrift()`, `getOddsDriftMetrics()` | Real-time drift alert broadcast |
 | `utils/h2-fetch.ts` | `h2Fetch(url, init?)`, `clearH2Cache()` | HTTP/2 fetch with graceful h1.1 fallback + per-origin caching |
+| `utils/readme-config-loader.ts` | `readConfigFromPackage(name, opts?)` | Extracts + parses TOML from any npm package README |
+
+## Packaged Configuration Pattern
+
+Versioned, self-documenting config shipped as npm packages:
+
+````
+packages/odds-selectors/
+├── package.json    ← name, version, files: ["README.md"]
+└── README.md       ← human docs + ```toml config block
+````
+
+**Why:** Bookmaker changes HTML → publish new version → update lockfile → restart. No code deploy.
+**How:** `readConfigFromPackage("odds-selectors")` extracts the fenced TOML block, parses it with `Bun.TOML.parse`.
+**Qualifies for:** Bun global virtual store (no lifecycle scripts, symlink delivery, ~115ms warm install).
 
 ## Key Design Decisions
 

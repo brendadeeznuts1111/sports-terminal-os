@@ -57,9 +57,10 @@ import { ensureActionQueueSchema, processActionQueue } from "@api/action-queue";
 import { recordWsMessage, recordHttpRequest } from "@api/metrics";
 import { applySecurityHeaders } from "@middleware/security";
 
-// Zone 10: Odds Drift Engine + Alias Loader
+// Zone 10: Odds Drift Engine + Alias Loader + Pipeline Worker
 import { initOddsDriftEngine } from "@services/odds-drift-engine";
 import { loadAliasMap, startAliasHotReload, stopAliasHotReload } from "@services/team-alias-loader";
+import { PipelineWorker } from "@services/pipeline-worker";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -94,6 +95,9 @@ let errorCount = 0;
 /** Server instance reference */
 let serverInstance: Server<unknown> | null = null;
 
+/** Zone 10: Pipeline worker — visual evidence for drift alerts */
+let pipelineWorker: PipelineWorker | null = null;
+
 // ---------------------------------------------------------------------------
 // WebSocket metrics
 // ---------------------------------------------------------------------------
@@ -111,12 +115,19 @@ export function getWsMetrics(): Record<string, unknown> {
     }
   }
 
-  // Pull odds-drift metrics (statically imported)
+  // Pull odds-drift + pipeline metrics (statically imported)
   let oddsDrift: Record<string, unknown> | null = null;
   try {
     oddsDrift = getOddsDriftMetrics();
   } catch {
     // odds-drift handler may not be registered
+  }
+
+  let pipeline: Record<string, unknown> | null = null;
+  try {
+    pipeline = pipelineWorker?.getMetrics() ?? null;
+  } catch {
+    // pipeline worker may not be initialized
   }
 
   return {
@@ -125,6 +136,7 @@ export function getWsMetrics(): Record<string, unknown> {
     connections: wsClients.size,
     topics_distribution: topicDistribution,
     odds_drift: oddsDrift,
+    pipeline: pipeline,
     server_time: new Date().toISOString(),
   };
 }
@@ -489,7 +501,7 @@ async function serveStaticFile(pathname: string): Promise<Response | null> {
   }
 
   // SPA fallback — serve index.html for unknown routes
-  if (!pathname.startsWith("/api/") && !pathname.startsWith("/ws")) {
+  if (!pathname.startsWith("/api/") && !pathname.startsWith("/ws") && !pathname.startsWith("/thumbs/")) {
     const indexFile = Bun.file("./dist/frontend/index.html");
     if (await indexFile.exists()) {
       return new Response(indexFile, {
@@ -560,6 +572,16 @@ function startServer(): void {
     const { aliasMap, canonicalTeams } = loadAliasMap();
 
     if (canonicalTeams.length > 0) {
+      // Create pipeline worker for visual evidence
+      pipelineWorker = new PipelineWorker({
+        onBroadcast: (channel, payload) => {
+          broadcastToWebSockets({
+            type: channel as WebSocketMessage["type"],
+            data: payload,
+          });
+        },
+      });
+
       const engine = initOddsDriftEngine({
         canonicalTeams,
         aliasMap,
@@ -567,6 +589,7 @@ function startServer(): void {
         minDrift: 0.01,
         dedupWindowMs: 5000,
         onAlert: (alert) => {
+          // 1. Broadcast drift alert to WebSocket clients
           broadcastOddsDrift({
             source: alert.source,
             rawTeam: alert.rawTeam,
@@ -579,6 +602,9 @@ function startServer(): void {
             detectedAt: alert.detectedAt,
             metadata: alert.metadata,
           });
+
+          // 2. Pipeline worker: scrape evidence, generate thumbnail, notify Telegram
+          pipelineWorker?.onAlert(alert);
         },
       });
 
@@ -589,7 +615,9 @@ function startServer(): void {
       startAliasHotReload();
 
       logger.info(
-        `Zone 10: OddsDriftEngine initialized (${canonicalTeams.length} teams, ${aliasMap.size} aliases)`
+        `Zone 10: Engine + PipelineWorker initialized ` +
+        `(${canonicalTeams.length} teams, ${aliasMap.size} aliases, ` +
+        `webview=${pipelineWorker?.getMetrics().webViewAvailable ?? "?"})`
       );
     } else {
       logger.info("Zone 10: OddsDriftEngine skipped — no canonical teams in alias store");
@@ -644,6 +672,20 @@ function startServer(): void {
       // SSE endpoint
       if (pathname === "/api/stream/live-wagers") {
         return handleSSE(req);
+      }
+
+      // Zone 10: Thumbnail evidence endpoint
+      if (pathname.startsWith("/thumbs/")) {
+        const team = decodeURIComponent(pathname.split("/").pop()!);
+        const entry = pipelineWorker?.getThumbnail(team);
+        if (!entry) return new Response("Not found", { status: 404 });
+        return new Response(entry.bytes as unknown as BodyInit, {
+          headers: {
+            "Content-Type": "image/jpeg",
+            "Cache-Control": "public, max-age=60",
+            "X-SHA256": entry.sha256,
+          },
+        });
       }
 
       // Legacy fast-path metrics endpoint (redirected to router)

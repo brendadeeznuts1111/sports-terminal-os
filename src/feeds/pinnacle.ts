@@ -12,10 +12,11 @@
  * Gated on BUCKEYE_LIVE_MODE + PINNACLE_API_KEY.
  */
 
-import { updateBookOdds, getBestLines, calculateCLV, detectSteamMoves } from "./sportsbook-service";
+import { updateBookOdds, getBestLines, calculateCLV, detectSteamMoves } from "../services/sportsbook-service";
 import { createLogger } from "@utils/logger";
 import { logHealth, logMarketDepth } from "@utils/tableLogger";
 import { env } from "@utils/env";
+import { findBestMatch, normalizeTeam } from "@utils/fuzzy-matcher";
 
 // ---------------------------------------------------------------------------
 // Logger
@@ -263,13 +264,35 @@ export async function refreshOddsFeed(): Promise<OddsFeedResult> {
     const entries = await fetchPinnacleOdds(sportIds);
     result.fetched = entries.length;
 
+    // Load existing DB event IDs for fuzzy matching (cached per sport)
+    const dbEventCache = new Map<string, string[]>();
+    const { getDb } = require("@db/index");
+
     // Feed each entry into updateBookOdds
     for (const entry of entries) {
       try {
+        // Fuzzy match: resolve Pinnacle eventId → canonical DB eventId
+        let eventId = entry.eventId;
+
+        if (!dbEventCache.has(entry.sport)) {
+          const rows = getDb()
+            .query(`SELECT DISTINCT event_id FROM sportsbook_odds WHERE sport = ?`)
+            .all(entry.sport) as Array<{ event_id: string }>;
+          dbEventCache.set(entry.sport, rows.map((r) => r.event_id));
+        }
+
+        const candidates = dbEventCache.get(entry.sport) ?? [];
+        if (candidates.length > 0) {
+          const match = findBestMatch(entry.eventId, candidates, 0.85);
+          if (match && match.score >= 0.85) {
+            eventId = match.match;
+          }
+        }
+
         const outcome = updateBookOdds({
           bookId: BOOK_ID,
           sport: entry.sport,
-          eventId: entry.eventId,
+          eventId,
           market: entry.market as "spread" | "ml" | "total",
           odds: entry.odds,
           line: entry.line,

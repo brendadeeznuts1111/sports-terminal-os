@@ -65,7 +65,7 @@ src/
 │   ├── cron.ts            All 11 cron jobs     ← register new jobs here
 │   ├── sportsbook-service.ts Odds + CLV + steam
 │   ├── buckeye-feed.ts    Wager polling
-│   ├── odds-feed.ts       Pinnacle odds feed
+│   ├── pinnacle.ts            Pinnacle odds feed
 │   ├── ewma-tracker.ts    Exponential decay exposure
 │   ├── player-service.ts  Archetype classification
 │   └── websocket-handlers/ 7 WS channels

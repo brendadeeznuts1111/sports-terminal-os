@@ -66,6 +66,7 @@ Every feed follows the same 3-function pattern. See `docs/feeds-blueprint.txt` f
 | `odds-drift-engine.ts` | `initOddsDriftEngine()`, `getOddsDriftEngine()` | Drift detection + canonical team resolution |
 | `team-alias-loader.ts` | `loadAliasMap()`, `getAliasMap()`, `getCanonicalTeams()` | DB-backed alias hydration |
 | `odds-drift-ws.ts` | `broadcastOddsDrift()`, `getOddsDriftMetrics()` | Real-time drift alert broadcast |
+| `utils/h2-fetch.ts` | `h2Fetch(url, init?)`, `clearH2Cache()` | HTTP/2 fetch with graceful h1.1 fallback + per-origin caching |
 
 ## Key Design Decisions
 
@@ -80,6 +81,7 @@ Every feed follows the same 3-function pattern. See `docs/feeds-blueprint.txt` f
 | 7 | Callback injection for WS handlers | `setOddsDriftBroadcast()` pattern — no circular imports between handler and server |
 | 8 | Immutable alert payloads | `Object.freeze()` before broadcast prevents cross-connection mutation |
 | 9 | Per-connection backpressure | `ws.getBufferedAmount() > limit` check before each send — drop, don't crash |
+| 10 | HTTP/2 multiplexed Telegram fetch | `h2Fetch()` wrapper tries h2 first, caches per-origin support, falls back to h1.1 transparently |
 
 ## Zone 10: Odds Drift (Real-Time)
 

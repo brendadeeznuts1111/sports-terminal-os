@@ -307,16 +307,17 @@ async function processSite(
     // await using — native disposal, no transpile, no finally block
     await using view = new Bun.WebView({ width: 1280, height: 800 });
 
+    // Navigate and wait for load via onNavigated callback (no setTimeout guess)
+    const { promise: loaded, resolve: onLoad } = Promise.withResolvers<void>();
+    view.onNavigated = () => onLoad();
     await view.navigate(url);
-    // Settle time — replace with view.waitForLoad() when Bun adds it
-    await new Promise((r) => setTimeout(r, 1000));
+    await loaded;
 
-    // Screenshot (PNG for max quality, JPEG for thumbnails)
-    const screenshotBlob = await view.screenshot({ format: "png" });
-    const screenshotBytes = new Uint8Array(await screenshotBlob.arrayBuffer());
+    // Screenshot with encoding:"buffer" → zero-copy mmap Buffer (no Blob dance)
+    const screenshotBytes = await view.screenshot({ encoding: "buffer" }) as Buffer;
 
-    // Bun.Image pipeline — metadata (async), placeholder, thumbnail
-    const img = new Bun.Image(screenshotBlob);
+    // Bun.Image pipeline — construct directly from Buffer
+    const img = new Bun.Image(screenshotBytes);
 
     // metadata() is async — returns { width, height, format }
     const meta = await img.metadata();

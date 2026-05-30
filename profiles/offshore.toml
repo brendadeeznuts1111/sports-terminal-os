@@ -1,0 +1,136 @@
+[meta]
+template_id = "offshore"
+name = "Offshore"
+description = "Offshore partner with high limits, crypto settlement, steam/arb enabled"
+version = "1.0.0"
+
+[jurisdiction]
+type = "offshore"
+allowed_states = []
+allowed_countries = ["CR", "PA", "CW", "MT", "GI", "AG"]
+minimum_age = 18
+kyc_tier = "basic"
+geo_fence_enabled = false
+tax_form = "none"
+self_exclusion_check = false
+
+[[sources.defaults]]
+id = "pin_offshore"
+type = "book_api"
+book_id = "PINNACLE"
+endpoint = "https://api.pinnacle.com"
+api_key_env = "PIN_API_KEY"
+api_secret_env = "PIN_API_SECRET"
+max_stake = 250000
+daily_limit = 1000000
+priority = 1
+
+[[sources.defaults]]
+id = "sbo_offshore"
+type = "book_api"
+book_id = "SBOBET"
+endpoint = "https://api.sbobet.com"
+api_key_env = "SBO_API_KEY"
+max_stake = 100000
+daily_limit = 500000
+priority = 2
+
+[[sources.defaults]]
+id = "betfair_ex"
+type = "exchange"
+book_id = "BETFAIR"
+endpoint = "https://api.betfair.com"
+api_key_env = "BF_API_KEY"
+api_secret_env = "BF_API_SECRET"
+max_stake = 50000
+daily_limit = 250000
+priority = 3
+
+[[sources.defaults]]
+id = "wallet_usdc"
+type = "wallet"
+address = "0x0000000000000000000000000000000000000000"
+chain = "polygon"
+currency = "USDC"
+
+[[sources.defaults]]
+id = "wallet_btc"
+type = "wallet"
+address = "bc1q000000000000000000000000000000000000"
+chain = "bitcoin"
+currency = "BTC"
+
+[cultivation]
+initial_deposit_target = 100000.00
+deposit_schedule_weeks = [1, 2, 4]
+deposit_amounts = [25000, 50000, 100000]
+initial_limit = 10000
+limit_raise_target = 250000
+raise_request_week = 2
+recreational_mix = "none"
+round_stakes = false
+casino_play_pct = 0.0
+odds_boost_acceptance = false
+max_bet_frequency_daily = 50
+required_sports_diversity = 1
+
+[settlement]
+commission_structure = "tiered"
+commission_tiers = [
+  { threshold = 0, rate = 0.35 },
+  { threshold = 50000, rate = 0.45 },
+  { threshold = 250000, rate = 0.55 },
+]
+makeup_enabled = true
+makeup_window_days = 7
+payout_cadence = "daily"
+payout_method = "usdc"
+payout_minimum = 1000.00
+currency = "USDC"
+hold_target_pct = 3.0
+
+[sor]
+eligible_tiers = ["T1", "T2", "T3", "T4"]
+max_exposure_per_signal = 100000.00
+max_daily_exposure = 500000.00
+max_single_bet = 100000.00
+book_whitelist = []
+book_blacklist = ["1XBET"]
+steam_allowed = true
+arb_allowed = true
+clv_allowed = true
+manual_allowed = true
+predictive_allowed = true
+require_opsec_green = false
+opsec_score_max = 75
+auto_suspend_rules = []
+review_required = ["graduation"]
+
+[telegram]
+auto_create_groups = true
+groups = [
+  { type = "personal", name = "{partner_id}-personal", auto_create = true },
+  { type = "signals", name = "{partner_id}-signals", auto_create = true },
+  { type = "steam", name = "{partner_id}-steam", auto_create = true },
+  { type = "arb", name = "{partner_id}-arb", auto_create = true },
+  { type = "settlement", name = "{partner_id}-settlement", auto_create = true },
+]
+alert_stake_minimum = 5000.00
+alert_types = ["steam", "arb", "clv", "settlement", "limit_change"]
+admin_bot_token_env = "TELEGRAM_BOT_TOKEN"
+
+[balance]
+initial_capital_requirement = 100000.00
+margin_call_threshold = 0.10
+margin_call_action = "reduce_limits"
+auto_inject_enabled = true
+max_auto_inject = 50000.00
+injection_cadence = "as_needed"
+return_threshold_pct = 0.25
+
+[compliance]
+auto_suspend_rules = []
+review_required_for = ["graduation", "tier_upgrade"]
+audit_retention_days = 2555
+max_opsec_score = 75
+require_2fa = false

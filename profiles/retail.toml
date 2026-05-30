@@ -1,0 +1,117 @@
+[meta]
+template_id = "retail"
+name = "US Retail"
+description = "US state-regulated retail partner, conservative limits, no offshore"
+version = "1.0.0"
+
+[jurisdiction]
+type = "regulated-us"
+allowed_states = ["NV", "NJ", "PA", "CO", "IL", "IN", "MI", "TN", "VA", "AZ", "NY"]
+allowed_countries = ["US"]
+minimum_age = 21
+kyc_tier = "enhanced"
+geo_fence_enabled = true
+tax_form = "W-9"
+self_exclusion_check = true
+
+[[sources.defaults]]
+id = "dk_retail"
+type = "book_api"
+book_id = "DRAFTKINGS"
+endpoint = "https://api.draftkings.com"
+api_key_env = "DK_API_KEY"
+max_stake = 5000
+daily_limit = 25000
+priority = 1
+
+[[sources.defaults]]
+id = "fd_retail"
+type = "book_api"
+book_id = "FANDUEL"
+endpoint = "https://api.fanduel.com"
+api_key_env = "FD_API_KEY"
+max_stake = 5000
+daily_limit = 25000
+priority = 2
+
+[[sources.defaults]]
+id = "betmgm_retail"
+type = "book_api"
+book_id = "BETMGM"
+endpoint = "https://api.betmgm.com"
+api_key_env = "BETMGM_API_KEY"
+max_stake = 3000
+daily_limit = 15000
+priority = 3
+
+[cultivation]
+initial_deposit_target = 10000.00
+deposit_schedule_weeks = [2, 4, 8, 12]
+deposit_amounts = [2500, 5000, 7500, 10000]
+initial_limit = 500
+limit_raise_target = 10000
+raise_request_week = 4
+recreational_mix = "high"
+round_stakes = true
+casino_play_pct = 15.0
+odds_boost_acceptance = true
+max_bet_frequency_daily = 10
+required_sports_diversity = 3
+
+[settlement]
+commission_structure = "flat"
+commission_tiers = [
+  { threshold = 0, rate = 0.25 },
+]
+makeup_enabled = false
+makeup_window_days = 0
+payout_cadence = "weekly"
+payout_method = "ach"
+payout_minimum = 250.00
+currency = "USD"
+hold_target_pct = 8.0
+
+[sor]
+eligible_tiers = ["T2", "T3", "T4"]
+max_exposure_per_signal = 5000.00
+max_daily_exposure = 25000.00
+max_single_bet = 5000.00
+book_whitelist = ["DRAFTKINGS", "FANDUEL", "BETMGM"]
+book_blacklist = []
+steam_allowed = false
+arb_allowed = false
+clv_allowed = true
+manual_allowed = true
+predictive_allowed = false
+require_opsec_green = true
+opsec_score_max = 25
+auto_suspend_rules = ["public_wifi", "vpn_detected", "geo_fence_breach"]
+review_required = ["graduation"]
+
+[telegram]
+auto_create_groups = true
+groups = [
+  { type = "personal", name = "{partner_id}-personal", auto_create = true },
+  { type = "signals", name = "{partner_id}-signals", auto_create = true },
+  { type = "clv", name = "{partner_id}-clv", auto_create = true },
+  { type = "settlement", name = "{partner_id}-settlement", auto_create = true },
+]
+alert_stake_minimum = 250.00
+alert_types = ["clv", "settlement", "opsec", "compliance"]
+admin_bot_token_env = "TELEGRAM_BOT_TOKEN"
+
+[balance]
+initial_capital_requirement = 10000.00
+margin_call_threshold = 0.10
+margin_call_action = "halt"
+auto_inject_enabled = false
+max_auto_inject = 0
+injection_cadence = "none"
+return_threshold_pct = 0.15
+
+[compliance]
+auto_suspend_rules = ["public_wifi", "vpn_detected", "geo_fence_breach"]
+review_required_for = ["graduation", "source_addition"]
+audit_retention_days = 2555
+max_opsec_score = 25
+require_2fa = true

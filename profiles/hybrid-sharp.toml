@@ -1,0 +1,151 @@
+[meta]
+template_id = "hybrid-sharp"
+name = "Hybrid Sharp"
+description = "Retail + offshore, steam + arb enabled, full SOR access"
+version = "1.0.0"
+
+[jurisdiction]
+type = "hybrid"
+allowed_states = ["NV", "NJ", "PA", "CO", "IL", "IN", "MI", "TN", "VA", "AZ", "NY"]
+allowed_countries = ["CR", "PA", "CW", "MT", "GI"]
+minimum_age = 21
+kyc_tier = "enhanced"
+geo_fence_enabled = false
+tax_form = "W-9"
+self_exclusion_check = true
+
+[[sources.defaults]]
+id = "dk_retail"
+type = "book_api"
+book_id = "DRAFTKINGS"
+endpoint = "https://api.draftkings.com"
+api_key_env = "DK_API_KEY"
+max_stake = 10000
+daily_limit = 50000
+priority = 2
+
+[[sources.defaults]]
+id = "fd_retail"
+type = "book_api"
+book_id = "FANDUEL"
+endpoint = "https://api.fanduel.com"
+api_key_env = "FD_API_KEY"
+max_stake = 10000
+daily_limit = 50000
+priority = 2
+
+[[sources.defaults]]
+id = "pin_offshore"
+type = "book_api"
+book_id = "PINNACLE"
+endpoint = "https://api.pinnacle.com"
+api_key_env = "PIN_API_KEY"
+api_secret_env = "PIN_API_SECRET"
+max_stake = 100000
+daily_limit = 500000
+priority = 1
+
+[[sources.defaults]]
+id = "sbo_offshore"
+type = "book_api"
+book_id = "SBOBET"
+endpoint = "https://api.sbobet.com"
+api_key_env = "SBO_API_KEY"
+max_stake = 50000
+daily_limit = 250000
+priority = 3
+
+[[sources.defaults]]
+id = "matchbook_ex"
+type = "exchange"
+book_id = "MATCHBOOK"
+endpoint = "https://api.matchbook.com"
+api_key_env = "MB_API_KEY"
+max_stake = 25000
+daily_limit = 100000
+priority = 3
+
+[[sources.defaults]]
+id = "wallet_usdc"
+type = "wallet"
+address = "0x0000000000000000000000000000000000000000"
+chain = "polygon"
+currency = "USDC"
+
+[cultivation]
+initial_deposit_target = 25000.00
+deposit_schedule_weeks = [1, 2, 4, 8]
+deposit_amounts = [5000, 10000, 15000, 25000]
+initial_limit = 2000
+limit_raise_target = 50000
+raise_request_week = 3
+recreational_mix = "any"
+round_stakes = false
+casino_play_pct = 5.0
+odds_boost_acceptance = true
+max_bet_frequency_daily = 20
+required_sports_diversity = 2
+
+[settlement]
+commission_structure = "tiered"
+commission_tiers = [
+  { threshold = 0, rate = 0.30 },
+  { threshold = 25000, rate = 0.40 },
+  { threshold = 100000, rate = 0.50 },
+]
+makeup_enabled = true
+makeup_window_days = 14
+payout_cadence = "daily"
+payout_method = "ach_usdc_split"
+payout_split = { ach_pct = 50, usdc_pct = 50 }
+payout_minimum = 500.00
+currency = "USD"
+hold_target_pct = 5.0
+
+[sor]
+eligible_tiers = ["T1", "T2", "T3", "T4"]
+max_exposure_per_signal = 25000.00
+max_daily_exposure = 100000.00
+max_single_bet = 25000.00
+book_whitelist = ["DRAFTKINGS", "FANDUEL", "PINNACLE", "SBOBET", "MATCHBOOK"]
+book_blacklist = ["1XBET"]
+steam_allowed = true
+arb_allowed = true
+clv_allowed = true
+manual_allowed = true
+predictive_allowed = true
+require_opsec_green = false
+opsec_score_max = 50
+auto_suspend_rules = ["public_wifi", "vpn_detected"]
+review_required = ["graduation", "capital_injection"]
+
+[telegram]
+auto_create_groups = true
+groups = [
+  { type = "personal", name = "{partner_id}-personal", auto_create = true },
+  { type = "signals", name = "{partner_id}-signals", auto_create = true },
+  { type = "steam", name = "{partner_id}-steam", auto_create = true },
+  { type = "arb", name = "{partner_id}-arb", auto_create = true },
+  { type = "clv", name = "{partner_id}-clv", auto_create = true },
+  { type = "settlement", name = "{partner_id}-settlement", auto_create = true },
+  { type = "opsec", name = "{partner_id}-opsec", auto_create = true },
+]
+alert_stake_minimum = 500.00
+alert_types = ["steam", "arb", "clv", "settlement", "opsec", "compliance", "limit_change"]
+admin_bot_token_env = "TELEGRAM_BOT_TOKEN"
+
+[balance]
+initial_capital_requirement = 50000.00
+margin_call_threshold = 0.15
+margin_call_action = "reduce_limits_then_halt"
+auto_inject_enabled = true
+max_auto_inject = 10000.00
+injection_cadence = "as_needed"
+return_threshold_pct = 0.20
+
+[compliance]
+auto_suspend_rules = ["public_wifi", "vpn_detected", "steam_chase_on_retail"]
+review_required_for = ["graduation", "capital_injection", "source_addition", "tier_upgrade"]
+audit_retention_days = 2555
+max_opsec_score = 50
+require_2fa = true

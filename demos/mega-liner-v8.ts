@@ -381,7 +381,7 @@ async function processSite(
       // Dark‑mode thumbnail for dashboard (resize + modulate + JPEG compress)
       const thumb = img
         .modulate({ brightness: 0.85, saturation: 0.6 })
-        .resize(400, 300, { fit: "inside", withoutEnlargement: true });
+        .resize(400, 300, { fit: "inside", filter: "mitchell", withoutEnlargement: true });
       const thumbBytes = await thumb.jpeg({ quality: 85 }).bytes();
       thumbCache.set(site, thumbBytes);
 

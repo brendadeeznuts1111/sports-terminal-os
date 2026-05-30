@@ -11,6 +11,7 @@
  */
 
 import { createLogger } from "@utils/logger";
+import { h2Fetch } from "@utils/h2-fetch";
 
 const logger = createLogger("SendMessageClient");
 
@@ -132,7 +133,7 @@ export class SendMessageClient {
     // Retry loop with exponential backoff
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const response = await fetch(`${this.apiUrl}/sendMessage`, {
+        const response = await h2Fetch(`${this.apiUrl}/sendMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),

@@ -20,6 +20,7 @@
 
 import { getDb } from "@db/index";
 import { createLogger } from "@utils/logger";
+import { h2Fetch } from "@utils/h2-fetch";
 
 const logger = createLogger("PipelineHealth");
 
@@ -234,7 +235,7 @@ async function sendTelegramAlert(message: string): Promise<void> {
   if (!botToken || !chatId) return;
 
   try {
-    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    await h2Fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, text: message }),

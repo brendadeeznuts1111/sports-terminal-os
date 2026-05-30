@@ -35,7 +35,7 @@
     "preview": "bun run build && bun run src/index.ts",
     "start": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
-    "hygiene:v7": "bun run demos/mega-liner-v7.ts",
+    "hygiene:v7": "bun run demos/mega-liner-v8.ts",
     "sources:audit": "bun run scripts/sources-audit.ts",
     "mcp": "bun run scripts/mcp-listen-topic.ts",
     "build:verify": "echo '=== STAGE 1/3: Typecheck ===' && bun run typecheck && echo '=== STAGE 2/3: Tests ===' && bun test && echo '=== STAGE 3/3: Build ===' && tsc --noEmit && echo 'BUILD VERIFIED'"

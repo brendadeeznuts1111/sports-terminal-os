@@ -158,7 +158,7 @@ bun run typecheck        # tsc --noEmit (must pass clean before every commit)
 bun run test             # Run test suite
 bun run db:migrate       # Apply migrations
 bun run db:seed          # Seed initial data
-bun run hygiene:v7       # Start mega-liner v7 (real-time odds monitor)
+bun run hygiene:v7       # Start mega-liner v8 (change-aware odds monitor)
 bun run sources:audit    # Verify thumbnail cache + /thumbs/:site endpoint
 bun run mcp --topic=X    # Live WebSocket topic audit stream (ANSI or raw JSON)
 bun run build:verify     # 3-stage gate: typecheck → 82 tests → tsc
@@ -197,3 +197,4 @@ bun run build:verify     # 3-stage gate: typecheck → 82 tests → tsc
 |------|------|---------------|
 | Mega‑liner v3 | `demos/mega-liner-v3.ts` | Bun primitives (WebView, cron, markdown.ansi, TOML, Transpiler, password, listen, udpSocket, serve, sqlite). `bun run demos/mega-liner-v3.ts` |
 | Mega‑liner v7 | `demos/mega-liner-v7.ts` | v3 + `await using` disposal, Bun.Image pipeline (placeholder, resize, modulate, jpeg), SHA‑256 hashing, thumbnail cache + HTTP endpoint, placeholder WS push. Production‑ready. `bun run demos/mega-liner-v7.ts` |
+| Mega‑liner v8 | `demos/mega-liner-v8.ts` | v7 + `deepEquals` change detection (skip unchanged scrapes), `console.depth=8` rich logging (no `[Object]`), `Bun.inspect` diff payloads, heartbeat protocol. Change‑aware. `bun run demos/mega-liner-v8.ts` |

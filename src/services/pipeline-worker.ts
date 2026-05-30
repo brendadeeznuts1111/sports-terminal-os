@@ -197,6 +197,21 @@ export class PipelineWorker {
       // Settle (onNavigated callback would be cleaner — see mega-liner v8 pattern)
       await new Promise((r) => setTimeout(r, 500));
 
+      // Extract odds-table bounding box for crop region metadata
+      let cropRegion: { x: number; y: number; w: number; h: number } | null = null;
+      try {
+        cropRegion = (await view.evaluate(`
+          (() => {
+            const table = document.querySelector('table.odds');
+            if (!table) return null;
+            const r = table.getBoundingClientRect();
+            return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+          })()
+        `)) as { x: number; y: number; w: number; h: number } | null;
+      } catch {
+        // Crop extraction is best-effort — full page is still captured
+      }
+
       // Screenshot with zero-copy Buffer encoding
       const screenshotBytes = (await view.screenshot({ encoding: "buffer" })) as Buffer;
 
@@ -218,7 +233,7 @@ export class PipelineWorker {
         .resize(400, 300, { fit: "inside", filter: "mitchell", withoutEnlargement: true });
       const thumbBytes = await thumb.jpeg({ quality: 85 }).bytes();
 
-      // Cache
+      // Cache with crop region metadata
       this.thumbnailCache.set(normalizeKey(team), {
         bytes: thumbBytes,
         placeholder,
@@ -226,7 +241,8 @@ export class PipelineWorker {
         width: meta.width,
         height: meta.height,
         capturedAt: Date.now(),
-      });
+        crop: cropRegion ?? undefined,
+      } as ThumbnailEntry & { crop?: { x: number; y: number; w: number; h: number } });
 
       console.log(
         `📸 [pipeline] Evidence captured: ${team} — ${screenshotBytes.length}B screenshot, ` +

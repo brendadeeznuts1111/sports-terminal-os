@@ -138,9 +138,20 @@ Feed → OddsDriftEngine.process(input)
 | `subscribe:odds_drift` | Client → Server | Subscribe with version |
 | `unsubscribe:odds_drift` | Client → Server | Unsubscribe |
 | `odds_drift:version` | Client → Server | Negotiate protocol version |
-| `odds_drift:auth` | Client → Server | JWT authentication |
-| `odds_drift:snapshot` | Client → Server | Request state snapshot |
-| `odds_drift` | Server → Client | Drift alert or event |
+| `odds_drift:auth` | Client → Server | JWT authentication (HMAC-SHA256) |
+| `odds_drift:snapshot` | Client → Server | Request state snapshot or replay `{lastSeq}` |
+| `ack` | Client → Server | Acknowledge receipt up to `lastSeq` |
+| `odds_drift` | Server → Client | Drift alert or event (with `_seq` for tracking) |
+| `replay` | Server → Client | Ring-buffered message catch-up (after reconnect) |
+
+### Hardening (v2.1.1)
+
+| Feature | Mechanism |
+|---------|-----------|
+| Rate limiting | `MAX_MSGS_PER_SEC=30` per connection, violators get `close(1008)` |
+| JWT claim enforcement | `allowed_topics` checked per-alert, supports `teams:*` wildcards |
+| Ring buffer replay | 100 messages per topic, `{lastSeq}` catch-up on reconnect |
+| Backpressure | `ws.getBufferedAmount() > limit` — drop, don't crash |
 
 ### Environment Variables
 
@@ -148,6 +159,8 @@ Feed → OddsDriftEngine.process(input)
 |----------|---------|---------|
 | `WS_JWT_SECRET` | (falls back to `JWT_SECRET`) | HMAC-SHA256 secret for WS JWT auth |
 | `WS_BACKPRESSURE_LIMIT` | `65536` | Max bytes buffered before pausing per-connection |
+| `WS_RATE_LIMIT_MSGS` | `30` | Max incoming messages/sec per connection (1008 close on violation) |
+| `WS_RING_BUFFER_SIZE` | `100` | Per-topic ring buffer entries for catch-up replay |
 | `TEAM_ALIAS_HOT_RELOAD_MS` | `0` (disabled) | Interval for alias map DB refresh |
 
 ## Build Commands

@@ -138,7 +138,7 @@ Feed → OddsDriftEngine.process(input)
 | `subscribe:odds_drift` | Client → Server | Subscribe with version |
 | `unsubscribe:odds_drift` | Client → Server | Unsubscribe |
 | `odds_drift:version` | Client → Server | Negotiate protocol version |
-| `odds_drift:auth` | Client → Server | JWT authentication (HMAC-SHA256) |
+| `odds_drift:auth` | Client → Server | JWT authentication (HMAC-SHA256, `HYGIENE_JWT_SECRET`) |
 | `odds_drift:snapshot` | Client → Server | Request state snapshot or replay `{lastSeq}` |
 | `ack` | Client → Server | Acknowledge receipt up to `lastSeq` |
 | `odds_drift` | Server → Client | Drift alert or event (with `_seq` for tracking) |
@@ -153,6 +153,16 @@ Feed → OddsDriftEngine.process(input)
 | Ring buffer replay | 100 messages per topic, `{lastSeq}` catch-up on reconnect |
 | Backpressure | `ws.getBufferedAmount() > limit` — drop, don't crash |
 
+### .env.example (Zone 10 Hygiene)
+
+```bash
+# Zone 10: Odds Drift Hygiene WebSocket
+HYGIENE_JWT_SECRET=your-hmac-sha256-secret-at-least-32-chars
+HYGIENE_WS_BACKPRESSURE_LIMIT=65536     # bytes (default: 65536)
+HYGIENE_WS_RATE_LIMIT_MSGS=30            # msgs/sec/conn (default: 30)
+HYGIENE_WS_RING_BUFFER_SIZE=100          # replay entries (default: 100)
+```
+
 ### Protocol Matrix
 
 | Version | JWT Auth | Snapshot | Backpressure | Rate Limit | Ring Buffer | JWT Enforcement |
@@ -165,10 +175,10 @@ Feed → OddsDriftEngine.process(input)
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `WS_JWT_SECRET` | (falls back to `JWT_SECRET`) | HMAC-SHA256 secret for WS JWT auth |
-| `WS_BACKPRESSURE_LIMIT` | `65536` | Max bytes buffered before pausing per-connection |
-| `WS_RATE_LIMIT_MSGS` | `30` | Max incoming messages/sec per connection (1008 close on violation) |
-| `WS_RING_BUFFER_SIZE` | `100` | Per-topic ring buffer entries for catch-up replay |
+| `HYGIENE_JWT_SECRET` | (falls back to `WS_JWT_SECRET` → `JWT_SECRET`) | HMAC-SHA256 secret for hygiene WS JWT auth |
+| `HYGIENE_WS_BACKPRESSURE_LIMIT` | `65536` | Max bytes buffered before pausing per-connection |
+| `HYGIENE_WS_RATE_LIMIT_MSGS` | `30` | Max incoming messages/sec per connection (1008 close on violation) |
+| `HYGIENE_WS_RING_BUFFER_SIZE` | `100` | Per-topic ring buffer entries for catch-up replay |
 | `TEAM_ALIAS_HOT_RELOAD_MS` | `0` (disabled) | Interval for alias map DB refresh |
 
 ## Build Commands

@@ -25,19 +25,25 @@ const CHANNEL = "odds_drift";
 
 /** Maximum bytes buffered before pausing transmission (per-connection). */
 const BACKPRESSURE_LIMIT = parseInt(
-  process.env.WS_BACKPRESSURE_LIMIT ?? "65536",
+  process.env.HYGIENE_WS_BACKPRESSURE_LIMIT ??
+  process.env.WS_BACKPRESSURE_LIMIT ??
+  "65536",
   10
 );
 
 /** Max incoming messages per second per connection (rate limiter). */
 const MAX_MSGS_PER_SEC = parseInt(
-  process.env.WS_RATE_LIMIT_MSGS ?? "30",
+  process.env.HYGIENE_WS_RATE_LIMIT_MSGS ??
+  process.env.WS_RATE_LIMIT_MSGS ??
+  "30",
   10
 );
 
 /** Ring buffer size per topic for catch-up replay. */
 const RING_BUFFER_SIZE = parseInt(
-  process.env.WS_RING_BUFFER_SIZE ?? "100",
+  process.env.HYGIENE_WS_RING_BUFFER_SIZE ??
+  process.env.WS_RING_BUFFER_SIZE ??
+  "100",
   10
 );
 
@@ -563,7 +569,7 @@ function verifyJWT(token: string): JWTClaims {
   }
 
   // Verify signature using Bun-native Node crypto polyfill (zero npm deps)
-  const secret = process.env.WS_JWT_SECRET || process.env.JWT_SECRET || "";
+  const secret = process.env.HYGIENE_JWT_SECRET || process.env.WS_JWT_SECRET || process.env.JWT_SECRET || "";
   if (!secret) {
     throw new Error("JWT secret not configured");
   }

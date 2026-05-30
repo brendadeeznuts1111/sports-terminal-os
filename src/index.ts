@@ -42,9 +42,24 @@ import {
   processPredictionWsMessage,
   removePredictionSubscriber,
 } from "@services/websocket-handlers/prediction-ws";
+
+// Zone 10: Odds Drift WebSocket
+import {
+  processOddsDriftWsMessage,
+  unregisterDriftClient,
+  getOddsDriftMetrics,
+  broadcastOddsDrift,
+  setOddsDriftBroadcast,
+  setSnapshotProvider as setOddsDriftSnapshotProvider,
+} from "@services/websocket-handlers/odds-drift-ws";
+
 import { ensureActionQueueSchema, processActionQueue } from "@api/action-queue";
 import { recordWsMessage, recordHttpRequest } from "@api/metrics";
 import { applySecurityHeaders } from "@middleware/security";
+
+// Zone 10: Odds Drift Engine + Alias Loader
+import { initOddsDriftEngine } from "@services/odds-drift-engine";
+import { loadAliasMap, startAliasHotReload, stopAliasHotReload } from "@services/team-alias-loader";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -78,6 +93,41 @@ let errorCount = 0;
 
 /** Server instance reference */
 let serverInstance: Server<unknown> | null = null;
+
+// ---------------------------------------------------------------------------
+// WebSocket metrics
+// ---------------------------------------------------------------------------
+
+/**
+ * Gather real-time WebSocket metrics for the /ws/metrics endpoint.
+ * Returns JSON-serializable object consumed by hygiene dashboard.
+ */
+export function getWsMetrics(): Record<string, unknown> {
+  const topicDistribution: Record<string, number> = {};
+
+  for (const client of wsClients.values()) {
+    for (const channel of client.subscribedChannels) {
+      topicDistribution[channel] = (topicDistribution[channel] ?? 0) + 1;
+    }
+  }
+
+  // Pull odds-drift metrics (statically imported)
+  let oddsDrift: Record<string, unknown> | null = null;
+  try {
+    oddsDrift = getOddsDriftMetrics();
+  } catch {
+    // odds-drift handler may not be registered
+  }
+
+  return {
+    protocol_version: "odds-drift-v2.1.0",
+    uptime_seconds: Math.floor((Date.now() - serverStartTime) / 1000),
+    connections: wsClients.size,
+    topics_distribution: topicDistribution,
+    odds_drift: oddsDrift,
+    server_time: new Date().toISOString(),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // WebSocket message broadcasting
@@ -151,6 +201,7 @@ async function gracefulShutdown(signal?: string): Promise<void> {
   try {
     stopMetricsCollector();
     resetIdleShutdown();
+    stopAliasHotReload();
     logger.info("Background services stopped");
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
@@ -295,7 +346,11 @@ function handleWebSocketMessage(ws: ServerWebSocket<unknown>, message: string | 
 
       default: {
         // Try Zone 3: Prediction Market WebSocket handlers
-        const handled = processPredictionWsMessage(ws, msg.type, msg.data);
+        let handled = processPredictionWsMessage(ws, msg.type, msg.data);
+        if (handled) break;
+
+        // Try Zone 10: Odds Drift WebSocket handler
+        handled = processOddsDriftWsMessage(ws, msg.type, msg.data, clientId);
         if (handled) break;
 
         // Unknown message type — log but don't crash
@@ -322,6 +377,9 @@ function handleWebSocketClose(ws: ServerWebSocket<unknown>, code: number, reason
   if (clientId) {
     // Zone 3: Clean up prediction market subscriptions
     removePredictionSubscriber(ws);
+
+    // Zone 10: Clean up odds drift subscriptions
+    unregisterDriftClient(clientId);
 
     wsClients.delete(clientId);
     onWsConnectionClose();
@@ -486,6 +544,60 @@ function startServer(): void {
     () => wsClients.size,
     () => sseClients.size
   );
+
+  // Zone 10: Initialize Odds Drift Engine
+  try {
+    // Wire the broadcast function (callback injection — no circular deps)
+    setOddsDriftBroadcast((message) => {
+      broadcastToWebSockets({
+        type: message.type as WebSocketMessage["type"],
+        provider: message.provider,
+        data: message.data,
+      });
+    });
+
+    // Load team aliases from DB and initialize the engine
+    const { aliasMap, canonicalTeams } = loadAliasMap();
+
+    if (canonicalTeams.length > 0) {
+      const engine = initOddsDriftEngine({
+        canonicalTeams,
+        aliasMap,
+        threshold: 0.88,
+        minDrift: 0.01,
+        dedupWindowMs: 5000,
+        onAlert: (alert) => {
+          broadcastOddsDrift({
+            source: alert.source,
+            rawTeam: alert.rawTeam,
+            canonicalTeam: alert.canonicalTeam ?? "unknown",
+            drift: alert.drift,
+            direction: alert.direction,
+            market: alert.market,
+            fromOdds: alert.fromOdds,
+            toOdds: alert.toOdds,
+            detectedAt: alert.detectedAt,
+            metadata: alert.metadata,
+          });
+        },
+      });
+
+      // Wire snapshot provider
+      setOddsDriftSnapshotProvider(() => engine.snapshot());
+
+      // Start hot-reload for alias map
+      startAliasHotReload();
+
+      logger.info(
+        `Zone 10: OddsDriftEngine initialized (${canonicalTeams.length} teams, ${aliasMap.size} aliases)`
+      );
+    } else {
+      logger.info("Zone 10: OddsDriftEngine skipped — no canonical teams in alias store");
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    logger.warn(`Zone 10: OddsDriftEngine init skipped (${message})`);
+  }
 
   // Create the server
   serverInstance = Bun.serve({

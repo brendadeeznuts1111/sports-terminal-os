@@ -606,6 +606,9 @@ const routes: Route[] = [
   // Admin
   { method: "POST", pattern: /^\/api\/admin\/bots\/refresh$/, handler: adminBotsRefreshHandler, auth: "admin", zone: "admin" },
 
+  // Zone 10: WebSocket Metrics
+  { method: "GET", pattern: /^\/ws\/metrics$/, handler: wsMetricsHandler, auth: "none", zone: "ws-metrics" },
+
   // Zone 1: Sportsbook Grid
   { method: "GET", pattern: /^\/api\/sportsbook\/odds$/, handler: handleListOdds, auth: "required", zone: "sportsbook" },
   { method: "GET", pattern: /^\/api\/sportsbook\/odds\/[^/]+$/, handler: handleGetOddsById, auth: "required", zone: "sportsbook" },
@@ -818,4 +821,31 @@ function handleError(
 
 export async function handleMetrics(): Promise<Response> {
   return serveMetricsEndpoint(new Request("http://localhost/metrics"));
+}
+
+// ---------------------------------------------------------------------------
+// WebSocket Metrics endpoint
+// ---------------------------------------------------------------------------
+
+async function wsMetricsHandler(req: Request, auth: AuthContext): Promise<Response> {
+  // Lazy-import to avoid circular dependency at module load time
+  const { getWsMetrics } = await import("../index") as {
+    getWsMetrics: () => Record<string, unknown>;
+  };
+
+  // Optionally include engine metrics if engine is initialized
+  let engineMetrics: Record<string, unknown> | null = null;
+  try {
+    const { getOddsDriftEngine } = await import("@services/odds-drift-engine");
+    engineMetrics = getOddsDriftEngine().getMetrics();
+  } catch {
+    // Engine not initialized — skip
+  }
+
+  const wsMetrics = getWsMetrics();
+
+  return Response.json({
+    ...wsMetrics,
+    odds_drift_engine: engineMetrics,
+  });
 }

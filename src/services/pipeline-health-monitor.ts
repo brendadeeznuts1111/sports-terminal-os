@@ -249,6 +249,7 @@ async function sendTelegramAlert(message: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function runPipelineHealthCheck(): Promise<void> {
+  const startNs = Bun.nanoseconds();
   logger.debug("Pipeline health check: starting");
 
   const metrics = collectPipelineMetrics();
@@ -275,11 +276,14 @@ export async function runPipelineHealthCheck(): Promise<void> {
       `Errors: ${metrics.errors.length}`,
     ].join("\n");
 
-    logger.warn(`Pipeline health: ${breached.length} threshold(s) breached`);
+    const durationMs = Math.round((Number(Bun.nanoseconds() - startNs)) / 1_000_000 * 100) / 100;
+
+    logger.warn(`Pipeline health: ${breached.length} threshold(s) breached in ${durationMs}ms`);
     await sendTelegramAlert(message);
   } else {
+    const durationMs = Math.round((Number(Bun.nanoseconds() - startNs)) / 1_000_000 * 100) / 100;
     logger.debug(
-      `Pipeline health: OK (wager=${metrics.wagerFeedAgeSeconds}s, odds=${metrics.oddsFeedAgeSeconds}s, sessions=${metrics.activeSessions})`
+      `Pipeline health: OK (wager=${metrics.wagerFeedAgeSeconds}s, odds=${metrics.oddsFeedAgeSeconds}s, sessions=${metrics.activeSessions}) in ${durationMs}ms`
     );
   }
 }

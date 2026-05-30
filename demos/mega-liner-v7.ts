@@ -332,7 +332,7 @@ const server = Bun.serve({
 
     // Thumbnail endpoint — serve cached JPEG on‑the‑fly
     if (url.pathname.startsWith("/thumbs/")) {
-      const site = url.pathname.split("/").pop()!;
+      const site = url.pathname.split("/").pop()!.replace(/\.\w+$/, "");
       const bytes = thumbCache.get(site);
       if (!bytes) return new Response("Not found", { status: 404 });
       return new Response(bytes, {

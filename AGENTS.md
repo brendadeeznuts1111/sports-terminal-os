@@ -189,10 +189,12 @@ bun run typecheck        # tsc --noEmit (must pass clean before every commit)
 bun run test             # Run test suite
 bun run db:migrate       # Apply migrations
 bun run db:seed          # Seed initial data
-bun run hygiene:v7       # Start mega-liner v8 (change-aware odds monitor)
-bun run sources:audit    # Verify thumbnail cache + /thumbs/:site endpoint
-bun run mcp --topic=X    # Live WebSocket topic audit stream (ANSI or raw JSON)
-bun run build:verify     # 3-stage gate: typecheck → 82 tests → tsc
+bun run hygiene:v7          # Start mega-liner v8 (change-aware odds monitor)
+bun run hygiene:dashboard   # Live ANSI terminal dashboard (1s refresh, /ws/metrics)
+bun run hygiene:status      # One-shot Bun.inspect of /ws/metrics
+bun run sources:audit       # Verify thumbnail cache + /thumbs/:site endpoint
+bun run mcp --topic=X       # Live WebSocket topic audit stream (ANSI or raw JSON)
+bun run build:verify        # 3-stage gate: typecheck → 82 tests → tsc
 ```
 
 ## Environment Variables

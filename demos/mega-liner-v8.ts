@@ -315,13 +315,13 @@ async function processSite(
     const screenshotBlob = await view.screenshot({ format: "png" });
     const screenshotBytes = new Uint8Array(await screenshotBlob.arrayBuffer());
 
-    // Bun.Image pipeline — metadata, placeholder, thumbnail
+    // Bun.Image pipeline — metadata (async), placeholder, thumbnail
     const img = new Bun.Image(screenshotBlob);
 
-    // Dimensions available after first encode
-    const jpegImg = img.jpeg(92);
-    const imgW = jpegImg.width;
-    const imgH = jpegImg.height;
+    // metadata() is async — returns { width, height, format }
+    const meta = await img.metadata();
+    const imgW = meta.width;
+    const imgH = meta.height;
 
     // SHA‑256 for dedup / audit trail
     const hasher = new Bun.CryptoHasher("sha256");
@@ -381,7 +381,7 @@ async function processSite(
       const thumb = img
         .modulate({ brightness: 0.85, saturation: 0.6 })
         .resize(400, 300, { fit: "inside", withoutEnlargement: true });
-      const thumbBytes = await thumb.jpeg(85).bytes();
+      const thumbBytes = await thumb.jpeg({ quality: 85 }).bytes();
       thumbCache.set(site, thumbBytes);
 
       // Update cache

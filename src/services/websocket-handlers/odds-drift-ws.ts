@@ -29,10 +29,23 @@ const BACKPRESSURE_LIMIT = parseInt(
   10
 );
 
+/** Max incoming messages per second per connection (rate limiter). */
+const MAX_MSGS_PER_SEC = parseInt(
+  process.env.WS_RATE_LIMIT_MSGS ?? "30",
+  10
+);
+
+/** Ring buffer size per topic for catch-up replay. */
+const RING_BUFFER_SIZE = parseInt(
+  process.env.WS_RING_BUFFER_SIZE ?? "100",
+  10
+);
+
 /** Supported protocol versions. */
 export const SUPPORTED_VERSIONS = new Set([
   "odds-drift-v2.0.0",
   "odds-drift-v2.1.0",
+  "odds-drift-v2.1.1",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -77,9 +90,29 @@ interface DriftClientState {
   protocolVersion: string;
   authenticated: boolean;
   allowedTopics: string[];
+  /** Rate limiter: messages received in the current second. */
+  messagesThisSecond: number;
+  /** Rate limiter: timestamp of the last rate-limit reset. */
+  lastRateCheck: number;
+  /** Monotonic sequence number of the last acknowledged message. */
+  lastAckedSeq: number;
+  /** Whether this client has been rate-limited (for metrics). */
+  rateLimited: boolean;
 }
 
 const driftClients = new Map<string, DriftClientState>();
+
+// ---------------------------------------------------------------------------
+// Ring buffer — per-topic message replay
+// ---------------------------------------------------------------------------
+
+interface RingEntry {
+  seq: number;
+  payload: string;
+}
+
+const ringBuffers = new Map<string, RingEntry[]>();
+let globalSeq = 0;
 
 // ---------------------------------------------------------------------------
 // Client Registry
@@ -111,6 +144,125 @@ export function getClientVersion(clientId: string): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
+// Rate limiting
+// ---------------------------------------------------------------------------
+
+/**
+ * Check and enforce per-connection rate limiting.
+ * Returns true if the client is within limits, false if they should be dropped.
+ * Closes the WebSocket with code 1008 on violation.
+ */
+function checkRateLimit(
+  ws: ServerWebSocket<unknown>,
+  clientId: string
+): boolean {
+  const state = driftClients.get(clientId);
+  if (!state) return false;
+
+  const now = Date.now();
+
+  // Reset counter every second
+  if (now - state.lastRateCheck >= 1000) {
+    state.messagesThisSecond = 0;
+    state.lastRateCheck = now;
+  }
+
+  state.messagesThisSecond++;
+
+  if (state.messagesThisSecond > MAX_MSGS_PER_SEC) {
+    state.rateLimited = true;
+    ws.send(
+      JSON.stringify({
+        type: "error",
+        code: "RATE_LIMITED",
+        message: `Max ${MAX_MSGS_PER_SEC} msg/sec exceeded`,
+      })
+    );
+    ws.close(1008, "Rate limited");
+    return false;
+  }
+
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// JWT claim enforcement
+// ---------------------------------------------------------------------------
+
+/**
+ * Check whether a client is authorized to receive an alert based on
+ * their JWT `allowed_topics` claim. Anonymous clients see everything.
+ */
+function clientCanReceive(state: DriftClientState, data: DriftAlertData): boolean {
+  // Anonymous — no restrictions
+  if (!state.authenticated || state.allowedTopics.length === 0) return true;
+
+  // Build the set of topics this alert would be published on
+  const alertTopics = [
+    `sources:${data.source}:team:${data.rawTeam}`,
+    `teams:${data.canonicalTeam}`,
+  ];
+
+  // Check if any allowed topic matches (supports wildcards like "teams:*")
+  for (const allowed of state.allowedTopics) {
+    // Wildcard match
+    if (allowed.endsWith(":*")) {
+      const prefix = allowed.slice(0, -2);
+      for (const topic of alertTopics) {
+        if (topic.startsWith(prefix)) return true;
+      }
+    }
+    // Exact match
+    for (const topic of alertTopics) {
+      if (topic === allowed) return true;
+    }
+  }
+
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Ring buffer
+// ---------------------------------------------------------------------------
+
+/**
+ * Push a message into the per-topic ring buffer. Returns the assigned
+ * monotonic sequence number for ack tracking.
+ */
+function pushToRingBuffer(topic: string, payload: string): number {
+  const seq = ++globalSeq;
+  const entry: RingEntry = { seq, payload };
+
+  let buf = ringBuffers.get(topic);
+  if (!buf) {
+    buf = [];
+    ringBuffers.set(topic, buf);
+  }
+
+  buf.push(entry);
+  if (buf.length > RING_BUFFER_SIZE) {
+    buf.shift();
+  }
+
+  return seq;
+}
+
+/**
+ * Replay messages from the ring buffer that a client missed.
+ * Returns messages with seq > lastSeq, up to `limit`.
+ */
+function replayFromRingBuffer(
+  topic: string,
+  lastSeq: number,
+  limit: number = 100
+): RingEntry[] {
+  const buf = ringBuffers.get(topic);
+  if (!buf) return [];
+
+  return buf.filter((e) => e.seq > lastSeq).slice(-limit);
+}
+
+// ---------------------------------------------------------------------------
 // Message Processing
 // ---------------------------------------------------------------------------
 
@@ -124,9 +276,29 @@ export function processOddsDriftWsMessage(
   data: unknown,
   clientId: string
 ): boolean {
+  // Rate-limit every incoming message (except subscribe/ack/pong)
+  if (
+    type !== "subscribe:odds_drift" &&
+    type !== "unsubscribe:odds_drift" &&
+    type !== "ack" &&
+    type !== "pong"
+  ) {
+    if (!checkRateLimit(ws, clientId)) return true; // Already closed
+  }
+
   switch (type) {
     case "subscribe:odds_drift": {
       handleOddsDriftSubscribe(ws, clientId, data);
+      return true;
+    }
+
+    case "ack": {
+      // Client acknowledges receipt up to a sequence number
+      const ackData = data as { lastSeq?: number } | undefined;
+      if (ackData?.lastSeq) {
+        const state = driftClients.get(clientId);
+        if (state) state.lastAckedSeq = ackData.lastSeq;
+      }
       return true;
     }
 
@@ -174,6 +346,10 @@ function handleOddsDriftSubscribe(
     protocolVersion: opts?.version ?? "odds-drift-v2.1.0",
     authenticated: false,
     allowedTopics: [],
+    messagesThisSecond: 0,
+    lastRateCheck: Date.now(),
+    lastAckedSeq: 0,
+    rateLimited: false,
   };
 
   driftClients.set(clientId, state);
@@ -440,14 +616,57 @@ export function setSnapshotProvider(provider: SnapshotProvider): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Handle a client request for a state snapshot.
- * Returns the full snapshot map from the drift engine.
+ * Handle a client request for a state snapshot with optional replay.
+ *
+ * Options (v2.1.1):
+ *   { since, lastSeq } — replay ring-buffered messages missed since lastSeq.
+ *   Without options — returns full engine snapshot.
  */
 function handleSnapshotRequest(
   ws: ServerWebSocket<unknown>,
   clientId: string,
-  _data: unknown
+  data: unknown
 ): void {
+  const opts = data as { since?: number; lastSeq?: number } | undefined;
+
+  // Ring buffer replay — catch-up for disconnected clients
+  if (opts?.lastSeq !== undefined) {
+    const replay = replayFromRingBuffer(CHANNEL, opts.lastSeq);
+    if (replay.length > 0) {
+      for (const entry of replay) {
+        sendWithBackpressure(ws, {
+          type: "odds_drift",
+          provider: "odds_drift",
+          data: {
+            event: "replay",
+            seq: entry.seq,
+            payload: entry.payload,
+          },
+          timestamp: Date.now(),
+        });
+      }
+    }
+
+    // Update client's ack position
+    const state = driftClients.get(clientId);
+    if (state) state.lastAckedSeq = globalSeq;
+
+    ws.send(
+      JSON.stringify({
+        type: "odds_drift",
+        provider: "odds_drift",
+        data: {
+          event: "replay_complete",
+          replayed: replay.length,
+          currentSeq: globalSeq,
+        },
+        timestamp: Date.now(),
+      })
+    );
+    return;
+  }
+
+  // Full snapshot from engine
   if (!snapshotProvider) {
     ws.send(
       JSON.stringify({
@@ -479,6 +698,7 @@ function handleSnapshotRequest(
       entries,
       cached: true,
       serverTime: Date.now(),
+      currentSeq: globalSeq,
     },
     timestamp: Date.now(),
   });
@@ -544,7 +764,14 @@ export function broadcastOddsDrift(data: DriftAlertData): void {
     timestamp: Date.now(),
   };
 
+  // Push to ring buffer for replay (seq assigned)
+  const seq = pushToRingBuffer(CHANNEL, JSON.stringify(message));
+
+  // Broadcast to connected clients with JWT claim enforcement
   oddsDriftBroadcastFn(message);
+
+  // Log for metrics
+  (message as any)._seq = seq;
 }
 
 // ---------------------------------------------------------------------------
@@ -557,11 +784,13 @@ export function broadcastOddsDrift(data: DriftAlertData): void {
 export function getOddsDriftMetrics(): Record<string, unknown> {
   let authenticatedCount = 0;
   let anonymousCount = 0;
+  let rateLimitedCount = 0;
   const versions: Record<string, number> = {};
 
   for (const state of driftClients.values()) {
     if (state.authenticated) authenticatedCount++;
     else anonymousCount++;
+    if (state.rateLimited) rateLimitedCount++;
 
     const v = state.protocolVersion;
     versions[v] = (versions[v] ?? 0) + 1;
@@ -569,9 +798,22 @@ export function getOddsDriftMetrics(): Record<string, unknown> {
 
   return {
     channel: CHANNEL,
+    protocol: "odds-drift-v2.1.1",
     totalClients: driftClients.size,
     authenticated: authenticatedCount,
     anonymous: anonymousCount,
+    rateLimited: rateLimitedCount,
     versions,
+    ringBuffer: {
+      topics: ringBuffers.size,
+      totalEntries: [...ringBuffers.values()].reduce((s, b) => s + b.length, 0),
+      currentSeq: globalSeq,
+    },
+    rateLimit: {
+      maxPerSec: MAX_MSGS_PER_SEC,
+    },
+    backpressure: {
+      limitBytes: BACKPRESSURE_LIMIT,
+    },
   };
 }

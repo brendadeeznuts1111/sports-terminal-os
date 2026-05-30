@@ -6,7 +6,7 @@ Single entry point for agents and developers. Start here.
 
 A sports betting trading terminal. Bun.serve backend (single port: HTTP + WebSocket + SSE), bun:sqlite (no ORM), React 19 + Vite frontend, Redis Streams Telegram bots, TOML partner profiles with Zod validation, EWMA adaptive exposure cascade engine.
 
-73K lines, 170 files, 11 cron jobs, 65+ API routes, 7 WebSocket channels, 13 database migrations, 21 frontend pages, 3 partner profile templates, 3 data feed connectors.
+73K lines, 170+ files, 10 cron jobs, 65+ API routes, 7 WebSocket channels, 14 database migrations, 21 frontend pages, 3 partner profile templates, 3 data feeds, 2 fuzzy matchers, 1 pipeline monitor.
 
 ## Quick Start
 
@@ -33,6 +33,7 @@ bun run test             # Test suite
 | **`docs/cron-blueprint.txt`** | Template for adding a cron job | Adding scheduled work |
 | **`docs/route-blueprint.txt`** | Template for adding an API endpoint | Adding an endpoint |
 | **`docs/ws-blueprint.txt`** | Template for adding a WebSocket handler | Adding real-time channels |
+| **`docs/adr/0003-fuzzy-team-matching.md`** | ADR: Fuzzy matching decision record | Understanding algorithm choices |
 | `.reasonix/skills/add-feed.md` | Skill: how to add a data feed | Invoked via `/add-feed` |
 
 ### For Humans (developers)
@@ -59,13 +60,13 @@ src/
 │   ├── session.ts         Buckeye sessions     ← cf_clearance storage
 │   └── jwt.ts             Token sign/verify
 ├── feeds/            Data source connectors   ← ONE FILE per external API
-│   ├── buckeye-players.ts Player roster feed   ← fetch → map → refresh
-│   └── (add pinnacle.ts, fonbet.ts here)
+│   ├── buckeye-players.ts  Player roster feed
+│   └── pinnacle.ts         Pinnacle odds feed
 ├── services/         Business logic           ← shared infrastructure
-│   ├── cron.ts            All 11 cron jobs     ← register new jobs here
+│   ├── cron.ts            All 10 cron jobs     ← register new jobs here
 │   ├── sportsbook-service.ts Odds + CLV + steam
-│   ├── buckeye-feed.ts    Wager polling
-│   ├── pinnacle.ts            Pinnacle odds feed
+│   ├── buckeye-feed.ts    Buckeye wager polling
+│   ├── pipeline-health-monitor.ts  Pipeline metrics + alerts
 │   ├── ewma-tracker.ts    Exponential decay exposure
 │   ├── player-service.ts  Archetype classification
 │   └── websocket-handlers/ 7 WS channels
@@ -80,7 +81,9 @@ src/
 │   └── pages/            21 page components
 ├── telegram/         Redis Streams bots       ← 3 bot workers
 ├── db/               SQLite + migrations      ← bun:sqlite, no ORM
-├── utils/            Types, env, logging      ← shared across all zones
+├── utils/            Types, env, logging, fuzzy  ← shared across all zones
+│   ├── fuzzy-matcher.ts    Token-aware JW + Dice + Metaphone
+│   └── odds-phrase-matcher.ts  Odds label + source name matching
 └── index.ts          Bun.serve entry point    ← single port
 ```
 
@@ -141,6 +144,9 @@ Shadow Agent          Buckeye Feed          Odds Feed           Cascade Mover
 | `PROXY_API_KEY` | Buckeye proxy API key | — |
 | `TELEGRAM_BOT_TOKEN` | Bot token for alerts | — |
 | `ENABLE_ANALYTICS` | Feature extraction cron | `false` |
+| `HEALTH_WAGER_MAX_AGE_MIN` | Max wager feed age before alert | `15` |
+| `HEALTH_ODDS_MAX_AGE_MIN` | Max odds feed age before alert | `10` |
+| `HEALTH_MAX_COOKIE_AGE_MIN` | Min cookie TTL before alert | `30` |
 | `ENABLE_RISK_ENGINE` | Risk position expiry | `false` |
 | `ENABLE_SANDBOX` | Sandbox scenarios | `true` |
 
@@ -172,7 +178,7 @@ Every feature built in this session followed the same loop:
 | Zone 3 Prediction Markets | Done | `prediction-market-service.ts`, `prediction-market-routes.ts` |
 | Zone 4 Risk/Backend Ops | Done | `risk-service.ts`, `risk-routes.ts`, `cron.ts`, `auth/` |
 | Zone 8 Webhook Alerts | Done | `webhook-service.ts`, `webhook-dispatcher.ts` |
-| Zone 9 Market Intelligence | Done | `odds-feed.ts`, `buckeye-feed.ts`, `buckeye-players.ts` |
+| Zone 9 Market Intelligence | Done | `pinnacle.ts`, `buckeye-feed.ts`, `buckeye-players.ts`, `pipeline-health-monitor.ts` |
 | Player Domain | Done | `player-service.ts`, `player-routes.ts`, `PlayerProfile.tsx` |
 | Agent Domain | Done | `agent-service.ts`, `agent-routes.ts`, `AgentDownline.tsx` |
 | Partner Profile OS | Done | `partner-gateway.ts`, `partner-profile-schema.ts`, TOML profiles |
@@ -184,10 +190,10 @@ Every feature built in this session followed the same loop:
 
 | Metric | Count |
 |--------|-------|
-| Source files | 170 |
+| Source files | 175+ |
 | Lines of code | ~73,000 |
 | Type errors | 0 |
-| Cron jobs | 11 |
+| Cron jobs | 10 |
 | API endpoints | 65+ |
 | WebSocket channels | 7 |
 | Database tables | 34+ |
@@ -195,7 +201,10 @@ Every feature built in this session followed the same loop:
 | Partner profiles | 3 TOML templates |
 | Data feeds | 3 (Buckeye wagers, Buckeye players, Pinnacle odds) |
 | Skills | 1 (`add-feed`) |
+| Fuzzy matchers | 2 (fuzzy-matcher v2, odds-phrase-matcher) |
+| Pipeline monitors | 1 (pipeline-health-monitor) |
 | Blueprints | 4 (feed, cron, route, WebSocket) |
+| ADRs | 1 (0003 — Fuzzy Team Matching) |
 
 ## Bun Primitive Coverage
 
@@ -204,14 +213,15 @@ Every Bun-native API used across the 170 source files, with call counts.
 | Primitive | Sites | Where |
 |-----------|-------|-------|
 | `bun:sqlite` | 23 | Every service, DB module, migrations, seed data |
-| `Bun.cron` | 8 | Cron registry, prediction market price history |
+| `Bun.cron` | 10 | Cron registry, prediction market price history |
 | `ServerWebSocket` | 7 | All 7 WebSocket channel handlers |
 | `Bun.file` | 6 | Static serving, migration loader, TOML loader |
 | `Bun.sleep` | 6 | Telegram bot, webhook dispatcher, Shadow Agent |
 | `Bun.serve` | 4 | Server bootstrap (HTTP + WS + SSE on one port) |
 | `Bun.TOML` | 4 | Partner profile loader, partner routes |
 | `Bun.Glob` | 1 | Migration SQL file discovery |
+| `Bun.nanoseconds` | 1 | Pipeline health monitor timing |
 | `Bun.WebView` | 1 | Shadow Agent cookie extraction (scripts/) |
 | `bun:spawn` | 1 | Telegram bot worker launcher |
 
-**10 primitives. 61 usage sites.** Zero npm dependencies for core infrastructure — Bun is the platform.
+**11 primitives. 63 usage sites.** Zero npm dependencies for core infrastructure — Bun is the platform.

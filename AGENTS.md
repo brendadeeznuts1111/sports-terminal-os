@@ -153,6 +153,14 @@ Feed → OddsDriftEngine.process(input)
 | Ring buffer replay | 100 messages per topic, `{lastSeq}` catch-up on reconnect |
 | Backpressure | `ws.getBufferedAmount() > limit` — drop, don't crash |
 
+### Protocol Matrix
+
+| Version | JWT Auth | Snapshot | Backpressure | Rate Limit | Ring Buffer | JWT Enforcement |
+|---------|----------|----------|-------------|------------|-------------|-----------------|
+| `odds-drift-v2.0.0` | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `odds-drift-v2.1.0` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `odds-drift-v2.1.1` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+
 ### Environment Variables
 
 | Variable | Default | Purpose |

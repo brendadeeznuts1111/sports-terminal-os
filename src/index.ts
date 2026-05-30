@@ -289,7 +289,7 @@ function registerCronJobs(): void {
 // ---------------------------------------------------------------------------
 
 function handleWebSocketOpen(ws: ServerWebSocket<unknown>): void {
-  const clientId = crypto.randomUUID();
+  const clientId = Bun.randomUUIDv7();
   ws.data = { clientId };
 
   const client: WebSocketClient = {
@@ -404,7 +404,7 @@ function handleWebSocketClose(ws: ServerWebSocket<unknown>, code: number, reason
 // ---------------------------------------------------------------------------
 
 function handleSSE(req: Request): Response {
-  const clientId = crypto.randomUUID();
+  const clientId = Bun.randomUUIDv7();
   const url = new URL(req.url);
 
   // Parse optional filter params
@@ -708,7 +708,7 @@ function startServer(): void {
           const message = err instanceof Error ? err.message : "Unknown error";
           logger.error(`Unhandled API error: ${message}`);
           const errorResponse = Response.json(
-            { error: "Internal server error", code: "INTERNAL_ERROR", requestId: crypto.randomUUID().slice(0, 12) },
+            { error: "Internal server error", code: "INTERNAL_ERROR", requestId: Bun.randomUUIDv7().slice(0, 12) },
             { status: 500 }
           );
           applySecurityHeaders(errorResponse);

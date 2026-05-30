@@ -49,7 +49,7 @@ export async function signToken(
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setIssuedAt()
       .setExpirationTime(Math.floor(Date.now() / 1000) + expiresIn)
-      .setJti(crypto.randomUUID());
+      .setJti(Bun.randomUUIDv7());
 
     const token = await jwt.sign(secret);
     logDebug("JWT", "Token signed", { sub: payload.sub as string, jti: payload.jti as string });

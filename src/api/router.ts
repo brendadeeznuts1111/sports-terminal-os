@@ -231,7 +231,7 @@ async function agentAnalyzeLiveHandler(req: Request, auth: AuthContext): Promise
   logger.debug(`AI analysis request for player ${body.playerId}`);
   return Response.json({
     playerId: body.playerId,
-    analysisId: `analysis_${crypto.randomUUID().slice(0, 8)}`,
+    analysisId: `analysis_${Bun.randomUUIDv7().slice(0, 8)}`,
     timestamp: new Date().toISOString(),
     riskTier: "GREEN",
     riskScore: 0.25,
@@ -260,7 +260,7 @@ async function agentRulesHandler(req: Request, auth: AuthContext): Promise<Respo
   if (req.method === "POST") {
     requireAdmin(auth);
     const body = await req.json();
-    return Response.json({ id: `rule_${crypto.randomUUID().slice(0, 8)}`, ...body, createdAt: new Date().toISOString() }, { status: 201 });
+    return Response.json({ id: `rule_${Bun.randomUUIDv7().slice(0, 8)}`, ...body, createdAt: new Date().toISOString() }, { status: 201 });
   }
   return Response.json({ error: "Method not allowed" }, { status: 405 });
 }
@@ -282,7 +282,7 @@ async function ipTrackingDetailHandler(req: Request, auth: AuthContext, params?:
 async function ipBlockHandler(req: Request, auth: AuthContext): Promise<Response> {
   requireAdmin(auth);
   const body = await req.json();
-  return Response.json({ id: `block_${crypto.randomUUID().slice(0, 8)}`, ...body, status: "active", createdAt: new Date().toISOString() }, { status: 201 });
+  return Response.json({ id: `block_${Bun.randomUUIDv7().slice(0, 8)}`, ...body, status: "active", createdAt: new Date().toISOString() }, { status: 201 });
 }
 
 /** Zone F: Rules Engine */
@@ -293,7 +293,7 @@ async function rulesListHandler(req: Request, auth: AuthContext): Promise<Respon
 async function rulesCreateHandler(req: Request, auth: AuthContext): Promise<Response> {
   requireAdmin(auth);
   const body = await req.json();
-  return Response.json({ id: `rule_${crypto.randomUUID().slice(0, 8)}`, ...body, createdAt: new Date().toISOString() }, { status: 201 });
+  return Response.json({ id: `rule_${Bun.randomUUIDv7().slice(0, 8)}`, ...body, createdAt: new Date().toISOString() }, { status: 201 });
 }
 
 async function rulesDeleteHandler(req: Request, auth: AuthContext, params?: Record<string, string>): Promise<Response> {
@@ -320,11 +320,11 @@ async function playerDetailHandler(req: Request, auth: AuthContext, params?: Rec
 /** Zone I: Sandbox v2 */
 async function sandboxSaveHandler(req: Request, auth: AuthContext): Promise<Response> {
   const body = await req.json();
-  return Response.json({ scenarioId: `scn_${crypto.randomUUID().slice(0, 8)}`, ...body, saved: true }, { status: 201 });
+  return Response.json({ scenarioId: `scn_${Bun.randomUUIDv7().slice(0, 8)}`, ...body, saved: true }, { status: 201 });
 }
 
 async function sandboxABTestHandler(req: Request, auth: AuthContext): Promise<Response> {
-  return Response.json({ testId: `test_${crypto.randomUUID().slice(0, 8)}`, status: "created" }, { status: 201 });
+  return Response.json({ testId: `test_${Bun.randomUUIDv7().slice(0, 8)}`, status: "created" }, { status: 201 });
 }
 
 async function sandboxGenerateSummariesHandler(req: Request, auth: AuthContext): Promise<Response> {
@@ -359,7 +359,7 @@ async function dashboardMetricsHandler(req: Request, auth: AuthContext): Promise
 async function enforcementApplyLimitHandler(req: Request, auth: AuthContext): Promise<Response> {
   requireAdmin(auth);
   const body = await req.json();
-  return Response.json({ enforcementId: ` enf_${crypto.randomUUID().slice(0, 8)}`, ...body, status: "applied" });
+  return Response.json({ enforcementId: ` enf_${Bun.randomUUIDv7().slice(0, 8)}`, ...body, status: "applied" });
 }
 
 async function enforcementAutoEnforceHandler(req: Request, auth: AuthContext): Promise<Response> {

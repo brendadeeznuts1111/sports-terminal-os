@@ -266,7 +266,7 @@ export async function refreshOddsFeed(): Promise<OddsFeedResult> {
 
     // Load existing DB event IDs for fuzzy matching (cached per sport)
     const dbEventCache = new Map<string, string[]>();
-    const { getDb } = require("@db/index");
+    const { getDb } = await import("@db/index");
 
     // Feed each entry into updateBookOdds
     for (const entry of entries) {

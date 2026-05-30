@@ -51,7 +51,7 @@ export interface SessionCreateInput {
  */
 export function createSession(input: SessionCreateInput): SessionData {
   const db = getDb();
-  const sessionId = crypto.randomUUID();
+  const sessionId = Bun.randomUUIDv7();
   const expiresAt = input.expiresAt || Math.floor(Date.now() / 1000) + 86400;
 
   try {

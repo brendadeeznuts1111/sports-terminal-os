@@ -35,7 +35,7 @@ export async function readConfigFromPackage<T = Record<string, unknown>>(
   packageName: string,
   options?: { key?: string }
 ): Promise<T> {
-  const readmePath = resolveReadme(packageName);
+  const readmePath = await resolveReadme(packageName);
   const raw = await Bun.file(readmePath).text();
 
   // Extract the first ```toml fenced code block
@@ -63,46 +63,6 @@ export async function readConfigFromPackage<T = Record<string, unknown>>(
   return parsed as T;
 }
 
-/**
- * Synchronous variant — reads the file with Bun.file(path).text()
- * wrapped in an immediately-invoked async. Useful when you can't
- * make the calling function async.
- *
- * Prefer `readConfigFromPackage` in async contexts.
- */
-export function readConfigFromPackageSync<T = Record<string, unknown>>(
-  packageName: string,
-  options?: { key?: string }
-): T {
-  const readmePath = resolveReadme(packageName);
-  // Bun.file().text() is async, but in Bun the sync equivalent
-  // is to read via node:fs for small README files
-  const { readFileSync } = require("node:fs");
-  const raw = readFileSync(readmePath, "utf-8");
-
-  const match = raw.match(/```toml\n([\s\S]*?)\n```/);
-  if (!match) {
-    throw new Error(
-      `No \`\`\`toml block found in README.md of package "${packageName}"`
-    );
-  }
-
-  const parsed = Bun.TOML.parse(match[1]) as Record<string, unknown>;
-
-  if (options?.key) {
-    const subtree = parsed[options.key];
-    if (subtree === undefined) {
-      throw new Error(
-        `Key "${options.key}" not found in TOML block of package "${packageName}". ` +
-        `Available keys: ${Object.keys(parsed).join(", ")}`
-      );
-    }
-    return subtree as T;
-  }
-
-  return parsed as T;
-}
-
 // ---------------------------------------------------------------------------
 // Resolution
 // ---------------------------------------------------------------------------
@@ -114,18 +74,16 @@ export function readConfigFromPackageSync<T = Record<string, unknown>>(
  *   1. `packages/<name>/README.md`     (local workspace package)
  *   2. `node_modules/<name>/README.md` (npm-installed package)
  */
-function resolveReadme(packageName: string): string {
-  const { existsSync } = require("node:fs");
-
+async function resolveReadme(packageName: string): Promise<string> {
   // Local workspace package (monorepo)
   const localPath = `packages/${packageName}/README.md`;
-  if (existsSync(localPath)) {
+  if (await Bun.file(localPath).exists()) {
     return localPath;
   }
 
   // npm-installed package (node_modules)
   const npmPath = `node_modules/${packageName}/README.md`;
-  if (existsSync(npmPath)) {
+  if (await Bun.file(npmPath).exists()) {
     return npmPath;
   }
 

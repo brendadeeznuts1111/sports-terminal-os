@@ -105,16 +105,17 @@ export function sorensenDice(a: string, b: string): number {
   if (a.length < 2 || b.length < 2) return a === b ? 1.0 : 0.0;
 
   const bigramsA = new Set<string>();
-  for (let i = 0; i < a.length - 1; i++) {
-    bigramsA.add(a.slice(i, i + 2));
+  for (let i = 0; i < a.length - 1; i++) bigramsA.add(a.slice(i, i + 2));
+
+  const bigramsB = new Set<string>();
+  for (let i = 0; i < b.length - 1; i++) bigramsB.add(b.slice(i, i + 2));
+
+  let intersection = 0;
+  for (const bg of bigramsA) {
+    if (bigramsB.has(bg)) intersection++;
   }
 
-  let overlap = 0;
-  for (let i = 0; i < b.length - 1; i++) {
-    if (bigramsA.has(b.slice(i, i + 2))) overlap++;
-  }
-
-  return (2 * overlap) / (a.length - 1 + b.length - 1);
+  return (2 * intersection) / (bigramsA.size + bigramsB.size);
 }
 
 // ---------------------------------------------------------------------------
@@ -123,15 +124,41 @@ export function sorensenDice(a: string, b: string): number {
 
 /**
  * Simplified Double Metaphone. Encodes a name into a sound-alike key.
- * Handles common sports-team phonetic variations ("City" ↔ "Citee").
+ * Uses a sports-team abbreviation lookup as a fast path, then falls
+ * back to phonetic rules for unknown tokens.
  */
 function metaphoneEncode(word: string): string {
   if (word.length === 0) return "";
 
   const s = word.toLowerCase();
-  const result: string[] = [];
 
-  // Simplified rules — covers most sports-team cases
+  // Fast path: sports-team abbreviation lookup table
+  const abbrev: Record<string, string> = {
+    manchester: "MNX", man: "MN", city: "ST", united: "ANTD", utd: "ATD",
+    town: "TN", athletic: "A0LK", sporting: "SPRTK", real: "RL",
+    fc: "", sc: "", ac: "AK", cf: "KF", afc: "AFK", county: "KNT",
+    wanderers: "WNTR", rovers: "RFR", rangers: "RNJR", albion: "ALBN",
+    olympic: "ALMP", dynamo: "DNM", lokomotiv: "LKMT", spartak: "SPRT",
+    cska: "CSK", zenit: "ZNT", portland: "PRTL", seattle: "STL",
+    golden: "GLDN", state: "STT", angeles: "ANJL", york: "YRK",
+    warriors: "WRR", lakers: "LKR", knicks: "NKS", celtics: "SLTK",
+    bulls: "BLS", spurs: "SPRS", rockets: "RKT", mavericks: "MFRK",
+    heat: "HT", thunder: "0NDR", trail: "TRL", blazers: "BLSR",
+  };
+
+  const tokens = s.split(/\s+/);
+  let code = "";
+  for (const token of tokens) {
+    if (abbrev[token] !== undefined) {
+      code += abbrev[token];
+    } else {
+      code += token;
+    }
+  }
+  if (code) return code.slice(0, 8);
+
+  // Fallback: phonetic rules for unknown tokens
+  const result: string[] = [];
   const rules: Array<[RegExp, string]> = [
     [/^kn/, "n"], [/^gn/, "n"], [/^pn/, "n"], [/^wr/, "r"],
     [/^wh/, "w"], [/^x/, "s"],
@@ -245,17 +272,23 @@ export function findBestMatch(
 ): MatchResult | null {
   let best: MatchResult = { match: "", score: 0, method: "exact" };
 
-  for (const c of candidates) {
-    const na = normalizeTeam(query);
-    const nb = normalizeTeam(c);
+  const queryNorm = normalizeTeam(query);
+  const normCache = new Map<string, string>();
 
-    if (na === nb) {
+  for (const c of candidates) {
+    let candNorm = normCache.get(c);
+    if (!candNorm) {
+      candNorm = normalizeTeam(c);
+      normCache.set(c, candNorm);
+    }
+
+    if (queryNorm === candNorm) {
       return { match: c, score: 1.0, method: "exact" };
     }
 
-    const jw = jaroWinkler(na, nb);
-    const dice = sorensenDice(na, nb);
-    const metaBoost = doubleMetaphoneBoost(na, nb);
+    const jw = jaroWinkler(queryNorm, candNorm);
+    const dice = sorensenDice(queryNorm, candNorm);
+    const metaBoost = doubleMetaphoneBoost(queryNorm, candNorm);
     const hybrid = jw * 0.7 + dice * 0.2 + metaBoost * 0.1;
 
     if (hybrid > best.score) {

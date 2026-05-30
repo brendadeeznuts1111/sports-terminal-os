@@ -196,3 +196,22 @@ Every feature built in this session followed the same loop:
 | Data feeds | 3 (Buckeye wagers, Buckeye players, Pinnacle odds) |
 | Skills | 1 (`add-feed`) |
 | Blueprints | 4 (feed, cron, route, WebSocket) |
+
+## Bun Primitive Coverage
+
+Every Bun-native API used across the 170 source files, with call counts.
+
+| Primitive | Sites | Where |
+|-----------|-------|-------|
+| `bun:sqlite` | 23 | Every service, DB module, migrations, seed data |
+| `Bun.cron` | 8 | Cron registry, prediction market price history |
+| `ServerWebSocket` | 7 | All 7 WebSocket channel handlers |
+| `Bun.file` | 6 | Static serving, migration loader, TOML loader |
+| `Bun.sleep` | 6 | Telegram bot, webhook dispatcher, Shadow Agent |
+| `Bun.serve` | 4 | Server bootstrap (HTTP + WS + SSE on one port) |
+| `Bun.TOML` | 4 | Partner profile loader, partner routes |
+| `Bun.Glob` | 1 | Migration SQL file discovery |
+| `Bun.WebView` | 1 | Shadow Agent cookie extraction (scripts/) |
+| `bun:spawn` | 1 | Telegram bot worker launcher |
+
+**10 primitives. 61 usage sites.** Zero npm dependencies for core infrastructure — Bun is the platform.

@@ -33,6 +33,39 @@
 // ---------------------------------------------------------------------------
 
 import { Database } from "bun:sqlite";
+import { readConfigFromPackage } from "../src/utils/readme-config-loader";
+
+// ---------------------------------------------------------------------------
+// 0.5. Odds Selectors — versioned config from package README
+// ---------------------------------------------------------------------------
+
+interface TeamSelector {
+  rowSelector: string;
+  teamSelector: string;
+  oddsSelector: string;
+  confSelector?: string;
+  type?: string;
+}
+
+interface OddsSelectorsConfig {
+  [team: string]: TeamSelector;
+  fallback: TeamSelector;
+}
+
+let oddsSelectors: OddsSelectorsConfig | null = null;
+
+try {
+  oddsSelectors = await readConfigFromPackage<OddsSelectorsConfig>(
+    "odds-selectors"
+  );
+  const teams = Object.keys(oddsSelectors).filter((k) => k !== "fallback");
+  console.log(
+    `📦 Loaded odds-selectors v1.0.0: ${teams.length} teams + fallback`
+  );
+} catch (err: unknown) {
+  const msg = err instanceof Error ? err.message : String(err);
+  console.log(`⚠️  odds-selectors not available (${msg}) — using hardcoded fallback`);
+}
 
 // ---------------------------------------------------------------------------
 // 1. Bun.TOML.parse — native config (self-bootstrapping)
@@ -196,14 +229,16 @@ function computeMarkdownReport(): string {
 const ODDS_DEMO_PATH = "/tmp/odds-demo.html";
 
 // Create a self-contained demo page for the headless browser
+// Demo page uses the fallback selectors from odds-selectors config
+// (table.odds tr → td:nth-child(1) for team, td:nth-child(2) for odds)
 await Bun.write(
   ODDS_DEMO_PATH,
   `<!DOCTYPE html>
 <html><body>
   <h1>Live Odds</h1>
-  <table id="odds-table">
-    <tr><td class="team">Arsenal</td><td class="odds">2.10</td></tr>
-    <tr><td class="team">Liverpool</td><td class="odds">1.95</td></tr>
+  <table class="odds">
+    <tr><td>Arsenal</td><td>2.10</td><td>0.96</td></tr>
+    <tr><td>Liverpool</td><td>1.95</td><td>0.99</td></tr>
   </table>
 </body></html>`
 );
@@ -230,13 +265,24 @@ async function scrapeOddsPage(): Promise<
     // Wait for the page to settle
     await new Promise((r) => setTimeout(r, 500));
 
-    // Extract odds values via DOM evaluation
-    const odds = (await view.evaluate(
-      `[...document.querySelectorAll('#odds-table tr')].map(row => ({
-        team: row.querySelector('.team')?.textContent?.trim(),
-        odds: row.querySelector('.odds')?.textContent?.trim(),
-      }))`
-    )) as Array<{ team: string; odds: string }>;
+    // Build selector string from odds-selectors config (or hardcoded fallback)
+    const sel = oddsSelectors?.fallback ?? {
+      rowSelector: "#odds-table tr",
+      teamSelector: ".team",
+      oddsSelector: ".odds",
+    };
+
+    // Extract odds values via DOM evaluation using versioned selectors
+    const evaluateJs = `
+      [...document.querySelectorAll('${sel.rowSelector}')].map(row => ({
+        team: row.querySelector('${sel.teamSelector}')?.textContent?.trim(),
+        odds: row.querySelector('${sel.oddsSelector}')?.textContent?.trim(),
+      }))`;
+
+    const odds = (await view.evaluate(evaluateJs)) as Array<{
+      team: string;
+      odds: string;
+    }>;
 
     console.log("🌐 Scraped odds:", odds);
 
